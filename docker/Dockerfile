@@ -1,29 +1,22 @@
-ARG PYTORCH="1.6.0"
-ARG CUDA="10.1"
-ARG CUDNN="7"
+ARG PYTORCH="2.7.0"
+ARG CUDA="12.8"
+ARG CUDNN="9"
 
 FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
 
-ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0+PTX"
-ENV TORCH_NVCC_FLAGS="-Xfatbin -compress-all"
-ENV CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
 
-RUN apt-get update && apt-get install -y ffmpeg libsm6 libxext6 git ninja-build libglib2.0-0 libsm6 libxrender-dev libxext6 \
+RUN apt-get update && apt-get install -y python3-pip vim git curl wget ffmpeg libsm6 libxext6 git ninja-build libglib2.0-0 libsm6 libxrender-dev libxext6 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Install MMCV
-RUN pip install mmcv-full==latest+torch1.6.0+cu101 -f https://openmmlab.oss-accelerate.aliyuncs.com/mmcv/dist/index.html
-RUN pip install mmdet
+WORKDIR /workspace
+RUN pip3 install 'git+https://github.com/facebookresearch/detectron2.git'
+RUN git clone https://github.com/michigan-traffic-lab/nuCarla.git
+RUN cd /workspace/nuCarla/BEVFormer/mmcv && MMCV_WITH_OPS=1 pip install . --no-cache-dir -v
 
-# Install MMDetection
-RUN conda clean --all
-RUN git clone https://github.com/open-mmlab/mmdetection3d.git /mmdetection3d
-WORKDIR /mmdetection3d
-ENV FORCE_CUDA="1"
-RUN pip install -r requirements/build.txt
+WORKDIR /workspace/nuCarla/BEVFormer
 RUN pip install --no-cache-dir -e .
 
-# uninstall pycocotools installed by nuscenes-devkit and reinstall mmpycocotools
-RUN pip uninstall pycocotools --no-cache-dir -y
-RUN pip install mmpycocotools --no-cache-dir --force --no-deps
+
+CMD ["bash"]
