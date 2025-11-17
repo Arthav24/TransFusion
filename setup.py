@@ -40,11 +40,12 @@ def make_cuda_ext(name,
     if torch.cuda.is_available() or os.getenv('FORCE_CUDA', '0') == '1':
         define_macros += [('WITH_CUDA', None)]
         extension = CUDAExtension
+        cuda_args = os.getenv('MMDET3D_CUDA_ARGS')
         extra_compile_args['nvcc'] = extra_args + [
             '-D__CUDA_NO_HALF_OPERATORS__',
             '-D__CUDA_NO_HALF_CONVERSIONS__',
             '-D__CUDA_NO_HALF2_OPERATORS__',
-        ]
+        ] + [cuda_args] if cuda_args else []
         sources += sources_cuda
     else:
         print('Compiling {} without CUDA'.format(name))

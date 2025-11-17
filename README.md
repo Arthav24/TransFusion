@@ -1,7 +1,27 @@
 # Bot-talion changes
 - download mini dataset from nuscenes to verify data loading https://www.nuscenes.org/download#
 - ``python3 tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes --version v1.0-mini``
+- had to reinstall mmcv as it was giving no kernel for cuda:0 error
+- pip3 uninstall mmcv-full
+- cd /workspace/nuCarla/BEVFormer/mmcv
+- rm -rf build mmcv_full.egg-info
+- export TORCH_CUDA_ARCH_LIST=12.0 && export CUDA_HOME=/usr/local/cuda
+- MMCV_CUDA_ARGS="-gencode=arch=compute_120,code=sm_120" MMCV_WITH_OPS=1 pip install . --no-cache-dir -v
+- the gencode arch will change 120 is for RTX 50x0
+- run python3 misc/check_mmcv_installation.py for verification
+- can also run python -c 'import mmcv; import mmcv.ops' to verify no errors in import 
+- uninstall mmdet3d  pip3 uninstall mmdet3d && rm -rf ./build
+- MMDET3D_CUDA_ARGS="-gencode=arch=compute_120,code=sm_120" pip install -e . --no-cache-dir -v
+- pip3 uninstall spconv cumm (by default install cpu version)
+- pip3 install 'cumm-cu128'
+- pip3 install 'spconv-cu126'
 
+Now the main problem is with two package networkx and trimesh
+I had to manually change np.bool to bool using ``find . -name *.py" -exec sed -i 's/np.bool/bool/g' {} +`` in dir /opt/conda/lib/python3.11/site-packages/trimesh
+cp misc/graphml.py to /opt/conda/lib/python3.11/site-packages/networkx/readwrite
+
+Its quite hacky because of numpy version and changes will resolve later
+after doing all this you should be able to ``python3 demo/pcd_demo.py demo/kitti_000008.bin configs/second/hv_second_secfpn_6x8_80e_kitti-3d-car.py checkpoints/hv_second_secfpn_6x8_80e_kitti-3d-car_20200620_230238-393f000c.pth --show``
 
 
 
