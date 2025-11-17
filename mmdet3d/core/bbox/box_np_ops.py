@@ -1,12 +1,20 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 # TODO: clean the functions in this file and move the APIs into box structures
 # in the future
+# NOTICE: All functions in this file are valid for LiDAR or depth boxes only
+# if we use default parameters.
 
 import numba
 import numpy as np
 
+from .structures.utils import limit_period, points_cam2img, rotation_3d_in_axis
+
 
 def camera_to_lidar(points, r_rect, velo2cam):
     """Convert points in camera coordinate to lidar coordinate.
+
+    Note:
+        This function is for KITTI only.
 
     Args:
         points (np.ndarray, shape=[N, 3]): Points in camera coordinate.
@@ -26,7 +34,10 @@ def camera_to_lidar(points, r_rect, velo2cam):
 
 
 def box_camera_to_lidar(data, r_rect, velo2cam):
-    """Covert boxes in camera coordinate to lidar coordinate.
+    """Convert boxes in camera coordinate to lidar coordinate.
+
+    Note:
+        This function is for KITTI only.
 
     Args:
         data (np.ndarray, shape=[N, 7]): Boxes in camera coordinate.
@@ -39,10 +50,13 @@ def box_camera_to_lidar(data, r_rect, velo2cam):
         np.ndarray, shape=[N, 3]: Boxes in lidar coordinate.
     """
     xyz = data[:, 0:3]
-    l, h, w = data[:, 3:4], data[:, 4:5], data[:, 5:6]
+    x_size, y_size, z_size = data[:, 3:4], data[:, 4:5], data[:, 5:6]
     r = data[:, 6:7]
     xyz_lidar = camera_to_lidar(xyz, r_rect, velo2cam)
-    return np.concatenate([xyz_lidar, w, l, h, r], axis=1)
+    # yaw and dims also needs to be converted
+    r_new = -r - np.pi / 2
+    r_new = limit_period(r_new, period=np.pi * 2)
+    return np.concatenate([xyz_lidar, x_size, z_size, y_size, r_new], axis=1)
 
 
 def corners_nd(dims, origin=0.5):
@@ -50,7 +64,8 @@ def corners_nd(dims, origin=0.5):
 
     Args:
         dims (np.ndarray, shape=[N, ndim]): Array of length per dim
-        origin (list or array or float): origin point relate to smallest point.
+        origin (list or array or float, optional): origin point relate to
+            smallest point. Defaults to 0.5
 
     Returns:
         np.ndarray, shape=[N, 2 ** ndim, ndim]: Returned corners.
@@ -97,12 +112,15 @@ def rotation_2d(points, angles):
 
 def center_to_corner_box2d(centers, dims, angles=None, origin=0.5):
     """Convert kitti locations, dimensions and angles to corners.
-    format: center(xy), dims(xy), angles(clockwise when positive)
+    format: center(xy), dims(xy), angles(counterclockwise when positive)
 
     Args:
         centers (np.ndarray): Locations in kitti label file with shape (N, 2).
         dims (np.ndarray): Dimensions in kitti label file with shape (N, 2).
-        angles (np.ndarray): Rotation_y in kitti label file with shape (N).
+        angles (np.ndarray, optional): Rotation_y in kitti label file with
+            shape (N). Defaults to None.
+        origin (list or array or float, optional): origin point relate to
+            smallest point. Defaults to 0.5.
 
     Returns:
         np.ndarray: Corners with the shape of (N, 4, 2).
@@ -113,7 +131,7 @@ def center_to_corner_box2d(centers, dims, angles=None, origin=0.5):
     corners = corners_nd(dims, origin=origin)
     # corners: [N, 4, 2]
     if angles is not None:
-        corners = rotation_2d(corners, angles)
+        corners = rotation_3d_in_axis(corners, angles)
     corners += centers.reshape([-1, 1, 2])
     return corners
 
@@ -251,8 +269,8 @@ def box2d_to_corner_jit(boxes):
         rot_sin = np.sin(boxes[i, -1])
         rot_cos = np.cos(boxes[i, -1])
         rot_mat_T[0, 0] = rot_cos
-        rot_mat_T[0, 1] = -rot_sin
-        rot_mat_T[1, 0] = rot_sin
+        rot_mat_T[0, 1] = rot_sin
+        rot_mat_T[1, 0] = -rot_sin
         rot_mat_T[1, 1] = rot_cos
         box_corners[i] = corners[i] @ rot_mat_T + boxes[i, :2]
     return box_corners
@@ -308,8 +326,8 @@ def rotation_points_single_angle(points, angle, axis=0):
 
     Args:
         points (np.ndarray, shape=[N, 3]]):
-        angles (np.ndarray, shape=[1]]):
-        axis (int): Axis to rotate at.
+        angle (np.ndarray, shape=[1]]):
+        axis (int, optional): Axis to rotate at. Defaults to 0.
 
     Returns:
         np.ndarray: Rotated points.
@@ -319,15 +337,15 @@ def rotation_points_single_angle(points, angle, axis=0):
     rot_cos = np.cos(angle)
     if axis == 1:
         rot_mat_T = np.array(
-            [[rot_cos, 0, -rot_sin], [0, 1, 0], [rot_sin, 0, rot_cos]],
+            [[rot_cos, 0, rot_sin], [0, 1, 0], [-rot_sin, 0, rot_cos]],
             dtype=points.dtype)
     elif axis == 2 or axis == -1:
         rot_mat_T = np.array(
-            [[rot_cos, -rot_sin, 0], [rot_sin, rot_cos, 0], [0, 0, 1]],
+            [[rot_cos, rot_sin, 0], [-rot_sin, rot_cos, 0], [0, 0, 1]],
             dtype=points.dtype)
     elif axis == 0:
         rot_mat_T = np.array(
-            [[1, 0, 0], [0, rot_cos, -rot_sin], [0, rot_sin, rot_cos]],
+            [[1, 0, 0], [0, rot_cos, rot_sin], [0, -rot_sin, rot_cos]],
             dtype=points.dtype)
     else:
         raise ValueError('axis should in range')
@@ -396,13 +414,18 @@ def corner_to_surfaces_3d(corners):
 
 
 def points_in_rbbox(points, rbbox, z_axis=2, origin=(0.5, 0.5, 0)):
-    """Check points in rotated bbox and return indicces.
+    """Check points in rotated bbox and return indices.
+
+    Note:
+        This function is for counterclockwise boxes.
 
     Args:
         points (np.ndarray, shape=[N, 3+dim]): Points to query.
         rbbox (np.ndarray, shape=[M, 7]): Boxes3d with rotation.
-        z_axis (int): Indicate which axis is height.
-        origin (tuple[int]): Indicate the position of box center.
+        z_axis (int, optional): Indicate which axis is height.
+            Defaults to 2.
+        origin (tuple[int], optional): Indicate the position of
+            box center. Defaults to (0.5, 0.5, 0).
 
     Returns:
         np.ndarray, shape=[N, M]: Indices of points in each box.
@@ -449,7 +472,7 @@ def limit_period(val, offset=0.5, period=np.pi):
 
 def create_anchors_3d_range(feature_size,
                             anchor_range,
-                            sizes=((1.6, 3.9, 1.56), ),
+                            sizes=((3.9, 1.6, 1.56), ),
                             rotations=(0, np.pi / 2),
                             dtype=np.float32):
     """Create anchors 3d by range.
@@ -460,14 +483,16 @@ def create_anchors_3d_range(feature_size,
         anchor_range (torch.Tensor | list[float]): Range of anchors with
             shape [6]. The order is consistent with that of anchors, i.e.,
             (x_min, y_min, z_min, x_max, y_max, z_max).
-        sizes (list[list] | np.ndarray | torch.Tensor): Anchor size with
-            shape [N, 3], in order of x, y, z.
-        rotations (list[float] | np.ndarray | torch.Tensor): Rotations of
-            anchors in a single feature grid.
-        dtype (type): Data type. Default to np.float32.
+        sizes (list[list] | np.ndarray | torch.Tensor, optional):
+            Anchor size with shape [N, 3], in order of x, y, z.
+            Defaults to ((3.9, 1.6, 1.56), ).
+        rotations (list[float] | np.ndarray | torch.Tensor, optional):
+            Rotations of anchors in a single feature grid.
+            Defaults to (0, np.pi / 2).
+        dtype (type, optional): Data type. Defaults to np.float32.
 
     Returns:
-        np.ndarray: Range based anchors with shape of \
+        np.ndarray: Range based anchors with shape of
             (*feature_size, num_sizes, num_rots, 7).
     """
     anchor_range = np.array(anchor_range, dtype)
@@ -501,7 +526,8 @@ def center_to_minmax_2d(centers, dims, origin=0.5):
     Args:
         centers (np.ndarray): Center points.
         dims (np.ndarray): Dimensions.
-        origin (list or array or float): origin point relate to smallest point.
+        origin (list or array or float, optional): Origin point relate
+            to smallest point. Defaults to 0.5.
 
     Returns:
         np.ndarray: Minmax points.
@@ -517,11 +543,11 @@ def rbbox2d_to_near_bbox(rbboxes):
     """convert rotated bbox to nearest 'standing' or 'lying' bbox.
 
     Args:
-        rbboxes (np.ndarray): Rotated bboxes with shape of \
+        rbboxes (np.ndarray): Rotated bboxes with shape of
             (N, 5(x, y, xdim, ydim, rad)).
 
     Returns:
-        np.ndarray: Bounding boxes with the shpae of
+        np.ndarray: Bounding boxes with the shape of
             (N, 4(xmin, ymin, xmax, ymax)).
     """
     rots = rbboxes[..., -1]
@@ -537,9 +563,14 @@ def iou_jit(boxes, query_boxes, mode='iou', eps=0.0):
     """Calculate box iou. Note that jit version runs ~10x faster than the
     box_overlaps function in mmdet3d.core.evaluation.
 
+    Note:
+        This function is for counterclockwise boxes.
+
     Args:
         boxes (np.ndarray): Input bounding boxes with shape of (N, 4).
         query_boxes (np.ndarray): Query boxes with shape of (K, 4).
+        mode (str, optional): IoU mode. Defaults to 'iou'.
+        eps (float, optional): Value added to denominator. Defaults to 0.
 
     Returns:
         np.ndarray: Overlap between boxes and query_boxes
@@ -572,7 +603,10 @@ def iou_jit(boxes, query_boxes, mode='iou', eps=0.0):
 
 
 def projection_matrix_to_CRT_kitti(proj):
-    """Split projection matrix of kitti.
+    """Split projection matrix of KITTI.
+
+    Note:
+        This function is for KITTI only.
 
     P = C @ [R|T]
     C is upper triangular matrix, so we need to inverse CR and use QR
@@ -597,6 +631,9 @@ def projection_matrix_to_CRT_kitti(proj):
 
 def remove_outside_points(points, rect, Trv2c, P2, image_shape):
     """Remove points which are outside of image.
+
+    Note:
+        This function is for KITTI only.
 
     Args:
         points (np.ndarray, shape=[N, 3+dims]): Total points.
@@ -629,8 +666,10 @@ def get_frustum(bbox_image, C, near_clip=0.001, far_clip=100):
     Args:
         bbox_image (list[int]): box in image coordinates.
         C (np.ndarray): Intrinsics.
-        near_clip (float): Nearest distance of frustum.
-        far_clip (float): Farthest distance of frustum.
+        near_clip (float, optional): Nearest distance of frustum.
+            Defaults to 0.001.
+        far_clip (float, optional): Farthest distance of frustum.
+            Defaults to 100.
 
     Returns:
         np.ndarray, shape=[8, 3]: coordinates of frustum corners.
@@ -723,12 +762,12 @@ def points_in_convex_polygon_3d_jit(points,
 
     Args:
         points (np.ndarray): Input points with shape of (num_points, 3).
-        polygon_surfaces (np.ndarray): Polygon surfaces with shape of \
-            (num_polygon, max_num_surfaces, max_num_points_of_surface, 3). \
-            All surfaces' normal vector must direct to internal. \
+        polygon_surfaces (np.ndarray): Polygon surfaces with shape of
+            (num_polygon, max_num_surfaces, max_num_points_of_surface, 3).
+            All surfaces' normal vector must direct to internal.
             Max_num_points_of_surface must at least 3.
-        num_surfaces (np.ndarray): Number of surfaces a polygon contains \
-            shape of (num_polygon).
+        num_surfaces (np.ndarray, optional): Number of surfaces a polygon
+            contains shape of (num_polygon). Defaults to None.
 
     Returns:
         np.ndarray: Result matrix with the shape of [num_points, num_polygon].
@@ -745,15 +784,16 @@ def points_in_convex_polygon_3d_jit(points,
                                             normal_vec, d, num_surfaces)
 
 
-@numba.jit
-def points_in_convex_polygon_jit(points, polygon, clockwise=True):
+@numba.njit
+def points_in_convex_polygon_jit(points, polygon, clockwise=False):
     """Check points is in 2d convex polygons. True when point in polygon.
 
     Args:
         points (np.ndarray): Input points with the shape of [num_points, 2].
         polygon (np.ndarray): Input polygon with the shape of
             [num_polygon, num_points_of_polygon, 2].
-        clockwise (bool): Indicate polygon is clockwise.
+        clockwise (bool, optional): Indicate polygon is clockwise. Defaults
+            to True.
 
     Returns:
         np.ndarray: Result matrix with the shape of [num_points, num_polygon].
@@ -762,14 +802,16 @@ def points_in_convex_polygon_jit(points, polygon, clockwise=True):
     num_points_of_polygon = polygon.shape[1]
     num_points = points.shape[0]
     num_polygons = polygon.shape[0]
-    # if clockwise:
-    #     vec1 = polygon - polygon[:, [num_points_of_polygon - 1] +
-    #                              list(range(num_points_of_polygon - 1)), :]
-    # else:
-    #     vec1 = polygon[:, [num_points_of_polygon - 1] +
-    #                    list(range(num_points_of_polygon - 1)), :] - polygon
-    # vec1: [num_polygon, num_points_of_polygon, 2]
-    vec1 = np.zeros((2), dtype=polygon.dtype)
+    # vec for all the polygons
+    if clockwise:
+        vec1 = polygon - polygon[:,
+                                 np.array([num_points_of_polygon - 1] + list(
+                                     range(num_points_of_polygon - 1))), :]
+    else:
+        vec1 = polygon[:,
+                       np.array([num_points_of_polygon - 1] +
+                                list(range(num_points_of_polygon -
+                                           1))), :] - polygon
     ret = np.zeros((num_points, num_polygons), dtype=np.bool_)
     success = True
     cross = 0.0
@@ -777,12 +819,9 @@ def points_in_convex_polygon_jit(points, polygon, clockwise=True):
         for j in range(num_polygons):
             success = True
             for k in range(num_points_of_polygon):
-                if clockwise:
-                    vec1 = polygon[j, k] - polygon[j, k - 1]
-                else:
-                    vec1 = polygon[j, k - 1] - polygon[j, k]
-                cross = vec1[1] * (polygon[j, k, 0] - points[i, 0])
-                cross -= vec1[0] * (polygon[j, k, 1] - points[i, 1])
+                vec = vec1[j, k]
+                cross = vec[1] * (polygon[j, k, 0] - points[i, 0])
+                cross -= vec[0] * (polygon[j, k, 1] - points[i, 1])
                 if cross >= 0:
                     success = False
                     break
@@ -801,29 +840,39 @@ def boxes3d_to_corners3d_lidar(boxes3d, bottom_center=True):
       |/         |/
       2 -------- 1
 
+    Note:
+        This function is for LiDAR boxes only.
+
     Args:
-        boxes3d (np.ndarray): Boxes with shape of (N, 7) \
-            [x, y, z, w, l, h, ry] in LiDAR coords, see the definition of ry \
-            in KITTI dataset.
-        bottom_center (bool): Whether z is on the bottom center of object.
+        boxes3d (np.ndarray): Boxes with shape of (N, 7)
+            [x, y, z, x_size, y_size, z_size, ry] in LiDAR coords,
+            see the definition of ry in KITTI dataset.
+        bottom_center (bool, optional): Whether z is on the bottom center
+            of object. Defaults to True.
 
     Returns:
         np.ndarray: Box corners with the shape of [N, 8, 3].
     """
     boxes_num = boxes3d.shape[0]
-    w, l, h = boxes3d[:, 3], boxes3d[:, 4], boxes3d[:, 5]
-    x_corners = np.array(
-        [w / 2., -w / 2., -w / 2., w / 2., w / 2., -w / 2., -w / 2., w / 2.],
-        dtype=np.float32).T
-    y_corners = np.array(
-        [-l / 2., -l / 2., l / 2., l / 2., -l / 2., -l / 2., l / 2., l / 2.],
-        dtype=np.float32).T
+    x_size, y_size, z_size = boxes3d[:, 3], boxes3d[:, 4], boxes3d[:, 5]
+    x_corners = np.array([
+        x_size / 2., -x_size / 2., -x_size / 2., x_size / 2., x_size / 2.,
+        -x_size / 2., -x_size / 2., x_size / 2.
+    ],
+                         dtype=np.float32).T
+    y_corners = np.array([
+        -y_size / 2., -y_size / 2., y_size / 2., y_size / 2., -y_size / 2.,
+        -y_size / 2., y_size / 2., y_size / 2.
+    ],
+                         dtype=np.float32).T
     if bottom_center:
         z_corners = np.zeros((boxes_num, 8), dtype=np.float32)
-        z_corners[:, 4:8] = h.reshape(boxes_num, 1).repeat(4, axis=1)  # (N, 8)
+        z_corners[:, 4:8] = z_size.reshape(boxes_num, 1).repeat(
+            4, axis=1)  # (N, 8)
     else:
         z_corners = np.array([
-            -h / 2., -h / 2., -h / 2., -h / 2., h / 2., h / 2., h / 2., h / 2.
+            -z_size / 2., -z_size / 2., -z_size / 2., -z_size / 2.,
+            z_size / 2., z_size / 2., z_size / 2., z_size / 2.
         ],
                              dtype=np.float32).T
 
@@ -831,9 +880,9 @@ def boxes3d_to_corners3d_lidar(boxes3d, bottom_center=True):
     zeros, ones = np.zeros(
         ry.size, dtype=np.float32), np.ones(
             ry.size, dtype=np.float32)
-    rot_list = np.array([[np.cos(ry), -np.sin(ry), zeros],
-                         [np.sin(ry), np.cos(ry), zeros], [zeros, zeros,
-                                                           ones]])  # (3, 3, N)
+    rot_list = np.array([[np.cos(ry), np.sin(ry), zeros],
+                         [-np.sin(ry), np.cos(ry), zeros],
+                         [zeros, zeros, ones]])  # (3, 3, N)
     R_list = np.transpose(rot_list, (2, 0, 1))  # (N, 3, 3)
 
     temp_corners = np.concatenate((x_corners.reshape(

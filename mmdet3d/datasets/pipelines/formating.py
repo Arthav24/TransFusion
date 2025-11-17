@@ -1,12 +1,11 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import numpy as np
 from mmcv.parallel import DataContainer as DC
 
 from mmdet3d.core.bbox import BaseInstance3DBoxes
 from mmdet3d.core.points import BasePoints
-from mmdet.datasets.builder import PIPELINES
 from mmdet.datasets.pipelines import to_tensor
-
-PIPELINES._module_dict.pop('DefaultFormatBundle')
+from ..builder import PIPELINES
 
 
 @PIPELINES.register_module()
@@ -23,7 +22,7 @@ class DefaultFormatBundle(object):
     - gt_bboxes_ignore: (1)to tensor, (2)to DataContainer
     - gt_labels: (1)to tensor, (2)to DataContainer
     - gt_masks: (1)to tensor, (2)to DataContainer (cpu_only=True)
-    - gt_semantic_seg: (1)unsqueeze dim-0 (2)to tensor, \
+    - gt_semantic_seg: (1)unsqueeze dim-0 (2)to tensor,
                        (3)to DataContainer (stack=True)
     """
 
@@ -51,7 +50,8 @@ class DefaultFormatBundle(object):
                 results['img'] = DC(to_tensor(img), stack=True)
         for key in [
                 'proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels',
-                'gt_labels_3d', 'pts_instance_mask', 'pts_semantic_mask'
+                'gt_labels_3d', 'attr_labels', 'pts_instance_mask',
+                'pts_semantic_mask', 'centers2d', 'depths'
         ]:
             if key not in results:
                 continue
@@ -90,8 +90,8 @@ class Collect3D(object):
     The "img_meta" item is always populated.  The contents of the "img_meta"
     dictionary depends on "meta_keys". By default this includes:
 
-        - 'img_shape': shape of the image input to the network as a tuple \
-            (h, w, c).  Note that images may be zero padded on the \
+        - 'img_shape': shape of the image input to the network as a tuple
+            (h, w, c).  Note that images may be zero padded on the
             bottom/right if the batch tensor is larger than this shape.
         - 'scale_factor': a float indicating the preprocessing scale
         - 'flip': a boolean indicating if image flip transform was used
@@ -99,20 +99,18 @@ class Collect3D(object):
         - 'ori_shape': original shape of the image as a tuple (h, w, c)
         - 'pad_shape': image shape after padding
         - 'lidar2img': transform from lidar to image
-        - 'pcd_horizontal_flip': a boolean indicating if point cloud is \
+        - 'depth2img': transform from depth to image
+        - 'cam2img': transform from camera to image
+        - 'pcd_horizontal_flip': a boolean indicating if point cloud is
             flipped horizontally
-        - 'pcd_vertical_flip': a boolean indicating if point cloud is \
+        - 'pcd_vertical_flip': a boolean indicating if point cloud is
             flipped vertically
         - 'box_mode_3d': 3D box mode
         - 'box_type_3d': 3D box type
         - 'img_norm_cfg': a dict of normalization information:
-
             - mean: per channel mean subtraction
             - std: per channel std divisor
             - to_rgb: bool indicating if bgr was converted to rgb
-        - 'rect': rectification matrix
-        - 'Trv2c': transformation from velodyne to camera coordinate
-        - 'P2': transformation betweeen cameras
         - 'pcd_trans': point cloud transformations
         - 'sample_idx': sample index
         - 'pcd_scale_factor': point cloud scale factor
@@ -123,22 +121,23 @@ class Collect3D(object):
         keys (Sequence[str]): Keys of results to be collected in ``data``.
         meta_keys (Sequence[str], optional): Meta keys to be converted to
             ``mmcv.DataContainer`` and collected in ``data[img_metas]``.
-            Default: ('filename', 'ori_shape', 'img_shape', 'lidar2img', \
-            'pad_shape', 'scale_factor', 'flip', 'pcd_horizontal_flip', \
-            'pcd_vertical_flip', 'box_mode_3d', 'box_type_3d', \
-            'img_norm_cfg', 'rect', 'Trv2c', 'P2', 'pcd_trans', \
+            Default: ('filename', 'ori_shape', 'img_shape', 'lidar2img',
+            'depth2img', 'cam2img', 'pad_shape', 'scale_factor', 'flip',
+            'pcd_horizontal_flip', 'pcd_vertical_flip', 'box_mode_3d',
+            'box_type_3d', 'img_norm_cfg', 'pcd_trans',
             'sample_idx', 'pcd_scale_factor', 'pcd_rotation', 'pts_filename')
     """
 
-    def __init__(self,
-                 keys,
-                 meta_keys=('filename', 'ori_shape', 'img_shape', 'lidar2img',
-                            'pad_shape', 'scale_factor', 'flip',
-                            'pcd_horizontal_flip', 'pcd_vertical_flip',
-                            'box_mode_3d', 'box_type_3d', 'img_norm_cfg',
-                            'rect', 'Trv2c', 'P2', 'pcd_trans', 'sample_idx',
-                            'pcd_scale_factor', 'pcd_rotation', 'pts_filename',
-                            'transformation_3d_flow')):
+    def __init__(
+        self,
+        keys,
+        meta_keys=('filename', 'ori_shape', 'img_shape', 'lidar2img',
+                   'depth2img', 'cam2img', 'pad_shape', 'scale_factor', 'flip',
+                   'pcd_horizontal_flip', 'pcd_vertical_flip', 'box_mode_3d',
+                   'box_type_3d', 'img_norm_cfg', 'pcd_trans', 'sample_idx',
+                   'pcd_scale_factor', 'pcd_rotation', 'pcd_rotation_angle',
+                   'pts_filename', 'transformation_3d_flow', 'trans_mat',
+                   'affine_aug')):
         self.keys = keys
         self.meta_keys = meta_keys
 
@@ -167,8 +166,8 @@ class Collect3D(object):
 
     def __repr__(self):
         """str: Return a string that describes the module."""
-        return self.__class__.__name__ + '(keys={}, meta_keys={})'.format(
-            self.keys, self.meta_keys)
+        return self.__class__.__name__ + \
+            f'(keys={self.keys}, meta_keys={self.meta_keys})'
 
 
 @PIPELINES.register_module()
@@ -222,6 +221,11 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
                 if 'gt_names_3d' in results:
                     results['gt_names_3d'] = results['gt_names_3d'][
                         gt_bboxes_3d_mask]
+                if 'centers2d' in results:
+                    results['centers2d'] = results['centers2d'][
+                        gt_bboxes_3d_mask]
+                if 'depths' in results:
+                    results['depths'] = results['depths'][gt_bboxes_3d_mask]
             if 'gt_bboxes_mask' in results:
                 gt_bboxes_mask = results['gt_bboxes_mask']
                 if 'gt_bboxes' in results:
@@ -230,6 +234,7 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
             if self.with_label:
                 if 'gt_names' in results and len(results['gt_names']) == 0:
                     results['gt_labels'] = np.array([], dtype=np.int64)
+                    results['attr_labels'] = np.array([], dtype=np.int64)
                 elif 'gt_names' in results and isinstance(
                         results['gt_names'][0], list):
                     # gt_labels might be a list of list in multi-view setting
@@ -256,7 +261,6 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
     def __repr__(self):
         """str: Return a string that describes the module."""
         repr_str = self.__class__.__name__
-        repr_str += '(class_names={}, '.format(self.class_names)
-        repr_str += 'with_gt={}, with_label={})'.format(
-            self.with_gt, self.with_label)
+        repr_str += f'(class_names={self.class_names}, '
+        repr_str += f'with_gt={self.with_gt}, with_label={self.with_label})'
         return repr_str

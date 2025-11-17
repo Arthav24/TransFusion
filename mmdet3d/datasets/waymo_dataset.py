@@ -1,13 +1,15 @@
-import mmcv
-import numpy as np
+# Copyright (c) OpenMMLab. All rights reserved.
 import os
 import tempfile
-import torch
-from mmcv.utils import print_log
 from os import path as osp
 
-from mmdet.datasets import DATASETS
+import mmcv
+import numpy as np
+import torch
+from mmcv.utils import print_log
+
 from ..core.bbox import Box3DMode, points_cam2img
+from .builder import DATASETS
 from .kitti_dataset import KittiDataset
 
 
@@ -45,8 +47,9 @@ class WaymoDataset(KittiDataset):
             Defaults to True.
         test_mode (bool, optional): Whether the dataset is in test mode.
             Defaults to False.
-        pcd_limit_range (list): The range of point cloud used to filter
-            invalid predicted boxes. Default: [-85, -85, -5, 85, 85, 5].
+        pcd_limit_range (list(float), optional): The range of point cloud used
+            to filter invalid predicted boxes.
+            Default: [-85, -85, -5, 85, 85, 5].
     """
 
     CLASSES = ('Car', 'Cyclist', 'Pedestrian')
@@ -55,7 +58,6 @@ class WaymoDataset(KittiDataset):
                  data_root,
                  ann_file,
                  split,
-                 num_views=5,
                  pts_prefix='velodyne',
                  pipeline=None,
                  classes=None,
@@ -64,7 +66,8 @@ class WaymoDataset(KittiDataset):
                  filter_empty_gt=True,
                  test_mode=False,
                  load_interval=1,
-                 pcd_limit_range=[-85, -85, -5, 85, 85, 5]):
+                 pcd_limit_range=[-85, -85, -5, 85, 85, 5],
+                 **kwargs):
         super().__init__(
             data_root=data_root,
             ann_file=ann_file,
@@ -76,10 +79,9 @@ class WaymoDataset(KittiDataset):
             box_type_3d=box_type_3d,
             filter_empty_gt=filter_empty_gt,
             test_mode=test_mode,
-            pcd_limit_range=pcd_limit_range)
+            pcd_limit_range=pcd_limit_range,
+            **kwargs)
 
-        self.num_views = num_views
-        assert self.num_views <= 5
         # to load a subset, just set the load_interval in the dataset config
         self.data_infos = self.data_infos[::load_interval]
         if hasattr(self, 'flag'):
@@ -102,7 +104,7 @@ class WaymoDataset(KittiDataset):
 
                 - sample_idx (str): sample index
                 - pts_filename (str): filename of point clouds
-                - img_prefix (str | None): prefix of image files
+                - img_prefix (str): prefix of image files
                 - img_info (dict): image info
                 - lidar2img (list[np.ndarray], optional): transformations from
                     lidar to different cameras
@@ -119,42 +121,13 @@ class WaymoDataset(KittiDataset):
         P0 = info['calib']['P0'].astype(np.float32)
         lidar2img = P0 @ rect @ Trv2c
 
-        # the Tr_velo_to_cam is computed for all images but not saved in .info for img1-4
-        # the size of img0-2: 1280x1920; img3-4: 886x1920
-        if self.modality['use_camera']:
-            image_paths = []
-            lidar2img_rts = []
-
-            # load calibration for all 5 images.
-            calib_path = img_filename.replace('image_0', 'calib').replace('.png', '.txt')
-            Tr_velo_to_cam_list = []
-            with open(calib_path, 'r') as f:
-                lines = f.readlines()
-            for line_num in range(6, 6 + self.num_views):
-                trans = np.array([float(info) for info in lines[line_num].split(' ')[1:13]]).reshape(3, 4)
-                trans = np.concatenate([trans, np.array([[0., 0., 0., 1.]])], axis=0).astype(np.float32)
-                Tr_velo_to_cam_list.append(trans)
-            assert np.allclose(Tr_velo_to_cam_list[0], info['calib']['Tr_velo_to_cam'].astype(np.float32))
-
-            for idx_img in range(self.num_views):
-                rect = info['calib']['R0_rect'].astype(np.float32)
-                # Trv2c = info['calib']['Tr_velo_to_cam'].astype(np.float32)
-                Trv2c = Tr_velo_to_cam_list[idx_img]
-                P0 = info['calib'][f'P{idx_img}'].astype(np.float32)
-                lidar2img = P0 @ rect @ Trv2c
-
-                image_paths.append(img_filename.replace('image_0', f'image_{idx_img}'))
-                lidar2img_rts.append(lidar2img)
-
         pts_filename = self._get_pts_filename(sample_idx)
         input_dict = dict(
             sample_idx=sample_idx,
             pts_filename=pts_filename,
             img_prefix=None,
-        )
-        if self.modality['use_camera']:
-            input_dict['img_filename'] = image_paths
-            input_dict['lidar2img'] = lidar2img_rts
+            img_info=dict(filename=img_filename),
+            lidar2img=lidar2img)
 
         if not self.test_mode:
             annos = self.get_ann_info(index)
@@ -171,15 +144,15 @@ class WaymoDataset(KittiDataset):
 
         Args:
             outputs (list[dict]): Testing results of the dataset.
-            pklfile_prefix (str | None): The prefix of pkl files. It includes
+            pklfile_prefix (str): The prefix of pkl files. It includes
                 the file path and the prefix of filename, e.g., "a/b/prefix".
                 If not specified, a temp file will be created. Default: None.
-            submission_prefix (str | None): The prefix of submitted files. It
+            submission_prefix (str): The prefix of submitted files. It
                 includes the file path and the prefix of filename, e.g.,
                 "a/b/prefix". If not specified, a temp file will be created.
                 Default: None.
-            data_format (str | None): Output data format. Default: 'waymo'.
-                Another supported choice is 'kitti'.
+            data_format (str, optional): Output data format.
+                Default: 'waymo'. Another supported choice is 'kitti'.
 
         Returns:
             tuple: (result_files, tmp_dir), result_files is a dict containing
@@ -251,23 +224,26 @@ class WaymoDataset(KittiDataset):
                  pklfile_prefix=None,
                  submission_prefix=None,
                  show=False,
-                 out_dir=None):
+                 out_dir=None,
+                 pipeline=None):
         """Evaluation in KITTI protocol.
 
         Args:
             results (list[dict]): Testing results of the dataset.
-            metric (str | list[str]): Metrics to be evaluated.
+            metric (str | list[str], optional): Metrics to be evaluated.
                 Default: 'waymo'. Another supported metric is 'kitti'.
-            logger (logging.Logger | str | None): Logger used for printing
+            logger (logging.Logger | str, optional): Logger used for printing
                 related information during evaluation. Default: None.
-            pklfile_prefix (str | None): The prefix of pkl files. It includes
+            pklfile_prefix (str, optional): The prefix of pkl files including
                 the file path and the prefix of filename, e.g., "a/b/prefix".
                 If not specified, a temp file will be created. Default: None.
-            submission_prefix (str | None): The prefix of submission datas.
+            submission_prefix (str, optional): The prefix of submission data.
                 If not specified, the submission data will not be generated.
-            show (bool): Whether to visualize.
+            show (bool, optional): Whether to visualize.
                 Default: False.
-            out_dir (str): Path to save the visualization results.
+            out_dir (str, optional): Path to save the visualization results.
+                Default: None.
+            pipeline (list[dict], optional): raw data loading for showing.
                 Default: None.
 
         Returns:
@@ -377,8 +353,8 @@ class WaymoDataset(KittiDataset):
         if tmp_dir is not None:
             tmp_dir.cleanup()
 
-        if show:
-            self.show(results, out_dir)
+        if show or out_dir:
+            self.show(results, out_dir, show=show, pipeline=pipeline)
         return ap_dict
 
     def bbox2result_kitti(self,
@@ -392,8 +368,8 @@ class WaymoDataset(KittiDataset):
             net_outputs (List[np.ndarray]): list of array storing the
                 bbox and score
             class_nanes (List[String]): A list of class names
-            pklfile_prefix (str | None): The prefix of pkl file.
-            submission_prefix (str | None): The prefix of submission file.
+            pklfile_prefix (str): The prefix of pkl file.
+            submission_prefix (str): The prefix of submission file.
 
         Returns:
             List[dict]: A list of dict have the kitti 3d format
@@ -522,7 +498,6 @@ class WaymoDataset(KittiDataset):
         scores = box_dict['scores_3d']
         labels = box_dict['labels_3d']
         sample_idx = info['image']['image_idx']
-        # TODO: remove the hack of yaw
         box_preds.limit_yaw(offset=0.5, period=np.pi * 2)
 
         if len(box_preds) == 0:

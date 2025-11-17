@@ -1,3 +1,13 @@
+# Bot-talion changes
+- download mini dataset from nuscenes to verify data loading https://www.nuscenes.org/download#
+- ``python3 tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes --version v1.0-mini``
+
+
+
+
+
+
+
 # TransFusion repository
 
 PyTorch implementation of TransFusion for CVPR'2022 paper ["TransFusion: Robust LiDAR-Camera Fusion for 3D Object Detection with Transformers"](https://arxiv.org/abs/2203.11496), by Xuyang Bai, Zeyu Hu, Xinge Zhu, Qingqiu Huang, Yilun Chen, Hongbo Fu and Chiew-Lan Tai.

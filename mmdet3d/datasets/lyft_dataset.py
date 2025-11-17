@@ -1,17 +1,21 @@
+# Copyright (c) OpenMMLab. All rights reserved.
+import os
+import tempfile
+from os import path as osp
+
 import mmcv
 import numpy as np
 import pandas as pd
-import tempfile
 from lyft_dataset_sdk.lyftdataset import LyftDataset as Lyft
 from lyft_dataset_sdk.utils.data_classes import Box as LyftBox
-from os import path as osp
 from pyquaternion import Quaternion
 
 from mmdet3d.core.evaluation.lyft_eval import lyft_eval
-from mmdet.datasets import DATASETS
 from ..core import show_result
 from ..core.bbox import Box3DMode, Coord3DMode, LiDARInstance3DBoxes
+from .builder import DATASETS
 from .custom_3d import Custom3DDataset
+from .pipelines import Compose
 
 
 @DATASETS.register_module()
@@ -21,7 +25,7 @@ class LyftDataset(Custom3DDataset):
     This class serves as the API for experiments on the Lyft Dataset.
 
     Please refer to
-    `<https://www.kaggle.com/c/3d-object-detection-for-autonomous-vehicles/data>`_  # noqa
+    `<https://www.kaggle.com/c/3d-object-detection-for-autonomous-vehicles/data>`_
     for data downloading.
 
     Args:
@@ -47,7 +51,7 @@ class LyftDataset(Custom3DDataset):
             Defaults to True.
         test_mode (bool, optional): Whether the dataset is in test mode.
             Defaults to False.
-    """
+    """  # noqa: E501
     NameMapping = {
         'bicycle': 'bicycle',
         'bus': 'bus',
@@ -82,7 +86,8 @@ class LyftDataset(Custom3DDataset):
                  modality=None,
                  box_type_3d='LiDAR',
                  filter_empty_gt=True,
-                 test_mode=False):
+                 test_mode=False,
+                 **kwargs):
         self.load_interval = load_interval
         super().__init__(
             data_root=data_root,
@@ -92,7 +97,8 @@ class LyftDataset(Custom3DDataset):
             modality=modality,
             box_type_3d=box_type_3d,
             filter_empty_gt=filter_empty_gt,
-            test_mode=test_mode)
+            test_mode=test_mode,
+            **kwargs)
 
         if self.modality is None:
             self.modality = dict(
@@ -112,7 +118,8 @@ class LyftDataset(Custom3DDataset):
         Returns:
             list[dict]: List of annotations sorted by timestamps.
         """
-        data = mmcv.load(ann_file)
+        # loading data from a file-like object needs file format
+        data = mmcv.load(ann_file, file_format='pkl')
         data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
         data_infos = data_infos[::self.load_interval]
         self.metadata = data['metadata']
@@ -126,7 +133,7 @@ class LyftDataset(Custom3DDataset):
             index (int): Index of the sample data to get.
 
         Returns:
-            dict: Data information that will be passed to the data \
+            dict: Data information that will be passed to the data
                 preprocessing pipelines. It includes the following keys:
 
                 - sample_idx (str): sample index
@@ -134,13 +141,13 @@ class LyftDataset(Custom3DDataset):
                 - sweeps (list[dict]): infos of sweeps
                 - timestamp (float): sample timestamp
                 - img_filename (str, optional): image filename
-                - lidar2img (list[np.ndarray], optional): transformations \
+                - lidar2img (list[np.ndarray], optional): transformations
                     from lidar to different cameras
                 - ann_info (dict): annotation info
         """
         info = self.data_infos[index]
 
-        # standard protocal modified from SECOND.Pytorch
+        # standard protocol modified from SECOND.Pytorch
         input_dict = dict(
             sample_idx=info['token'],
             pts_filename=info['lidar_path'],
@@ -187,7 +194,7 @@ class LyftDataset(Custom3DDataset):
         Returns:
             dict: Annotation information consists of the following keys:
 
-                - gt_bboxes_3d (:obj:`LiDARInstance3DBoxes`): \
+                - gt_bboxes_3d (:obj:`LiDARInstance3DBoxes`):
                     3D ground truth bboxes.
                 - gt_labels_3d (np.ndarray): Labels of ground truths.
                 - gt_names (list[str]): Class names of ground truths.
@@ -272,10 +279,11 @@ class LyftDataset(Custom3DDataset):
 
         Args:
             result_path (str): Path of the result file.
-            logger (logging.Logger | str | None): Logger used for printing
+            logger (logging.Logger | str, optional): Logger used for printing
                 related information during evaluation. Default: None.
-            metric (str): Metric name used for evaluation. Default: 'bbox'.
-            result_name (str): Result name in the metric prefix.
+            metric (str, optional): Metric name used for evaluation.
+                Default: 'bbox'.
+            result_name (str, optional): Result name in the metric prefix.
                 Default: 'pts_bbox'.
 
         Returns:
@@ -309,18 +317,18 @@ class LyftDataset(Custom3DDataset):
 
         Args:
             results (list[dict]): Testing results of the dataset.
-            jsonfile_prefix (str | None): The prefix of json files. It includes
+            jsonfile_prefix (str): The prefix of json files. It includes
                 the file path and the prefix of filename, e.g., "a/b/prefix".
                 If not specified, a temp file will be created. Default: None.
-            csv_savepath (str | None): The path for saving csv files.
+            csv_savepath (str): The path for saving csv files.
                 It includes the file path and the csv filename,
                 e.g., "a/b/filename.csv". If not specified,
                 the result will not be converted to csv file.
 
         Returns:
-            tuple: Returns (result_files, tmp_dir), where `result_files` is a \
-                dict containing the json filepaths, `tmp_dir` is the temporal \
-                directory created for saving json files when \
+            tuple: Returns (result_files, tmp_dir), where `result_files` is a
+                dict containing the json filepaths, `tmp_dir` is the temporal
+                directory created for saving json files when
                 `jsonfile_prefix` is not specified.
         """
         assert isinstance(results, list), 'results must be a list'
@@ -334,9 +342,16 @@ class LyftDataset(Custom3DDataset):
         else:
             tmp_dir = None
 
-        if not isinstance(results[0], dict):
+        # currently the output prediction results could be in two formats
+        # 1. list of dict('boxes_3d': ..., 'scores_3d': ..., 'labels_3d': ...)
+        # 2. list of dict('pts_bbox' or 'img_bbox':
+        #     dict('boxes_3d': ..., 'scores_3d': ..., 'labels_3d': ...))
+        # this is a workaround to enable evaluation of both formats on Lyft
+        # refer to https://github.com/open-mmlab/mmdetection3d/issues/449
+        if not ('pts_bbox' in results[0] or 'img_bbox' in results[0]):
             result_files = self._format_bbox(results, jsonfile_prefix)
         else:
+            # should take the inner dict out of 'pts_bbox' or 'img_bbox' dict
             result_files = dict()
             for name in results[0]:
                 print(f'\nFormating bboxes of {name}')
@@ -356,24 +371,30 @@ class LyftDataset(Custom3DDataset):
                  csv_savepath=None,
                  result_names=['pts_bbox'],
                  show=False,
-                 out_dir=None):
+                 out_dir=None,
+                 pipeline=None):
         """Evaluation in Lyft protocol.
 
         Args:
             results (list[dict]): Testing results of the dataset.
-            metric (str | list[str]): Metrics to be evaluated.
-            logger (logging.Logger | str | None): Logger used for printing
+            metric (str | list[str], optional): Metrics to be evaluated.
+                Default: 'bbox'.
+            logger (logging.Logger | str, optional): Logger used for printing
                 related information during evaluation. Default: None.
-            jsonfile_prefix (str | None): The prefix of json files. It includes
+            jsonfile_prefix (str, optional): The prefix of json files including
                 the file path and the prefix of filename, e.g., "a/b/prefix".
                 If not specified, a temp file will be created. Default: None.
-            csv_savepath (str | None): The path for saving csv files.
+            csv_savepath (str, optional): The path for saving csv files.
                 It includes the file path and the csv filename,
                 e.g., "a/b/filename.csv". If not specified,
                 the result will not be converted to csv file.
-            show (bool): Whether to visualize.
+            result_names (list[str], optional): Result names in the
+                metric prefix. Default: ['pts_bbox'].
+            show (bool, optional): Whether to visualize.
                 Default: False.
-            out_dir (str): Path to save the visualization results.
+            out_dir (str, optional): Path to save the visualization results.
+                Default: None.
+            pipeline (list[dict], optional): raw data loading for showing.
                 Default: None.
 
         Returns:
@@ -394,34 +415,62 @@ class LyftDataset(Custom3DDataset):
         if tmp_dir is not None:
             tmp_dir.cleanup()
 
-        if show:
-            self.show(results, out_dir)
+        if show or out_dir:
+            self.show(results, out_dir, show=show, pipeline=pipeline)
         return results_dict
 
-    def show(self, results, out_dir):
+    def _build_default_pipeline(self):
+        """Build the default pipeline for this dataset."""
+        pipeline = [
+            dict(
+                type='LoadPointsFromFile',
+                coord_type='LIDAR',
+                load_dim=5,
+                use_dim=5,
+                file_client_args=dict(backend='disk')),
+            dict(
+                type='LoadPointsFromMultiSweeps',
+                sweeps_num=10,
+                file_client_args=dict(backend='disk')),
+            dict(
+                type='DefaultFormatBundle3D',
+                class_names=self.CLASSES,
+                with_label=False),
+            dict(type='Collect3D', keys=['points'])
+        ]
+        return Compose(pipeline)
+
+    def show(self, results, out_dir, show=False, pipeline=None):
         """Results visualization.
 
         Args:
             results (list[dict]): List of bounding boxes results.
             out_dir (str): Output directory of visualization result.
+            show (bool): Whether to visualize the results online.
+                Default: False.
+            pipeline (list[dict], optional): raw data loading for showing.
+                Default: None.
         """
+        assert out_dir is not None, 'Expect out_dir, got none.'
+        pipeline = self._get_pipeline(pipeline)
         for i, result in enumerate(results):
-            example = self.prepare_test_data(i)
-            points = example['points'][0]._data.numpy()
+            if 'pts_bbox' in result.keys():
+                result = result['pts_bbox']
             data_info = self.data_infos[i]
             pts_path = data_info['lidar_path']
             file_name = osp.split(pts_path)[-1].split('.')[0]
-            # for now we convert points into depth mode
+            points = self._extract_data(i, pipeline, 'points').numpy()
             points = Coord3DMode.convert_point(points, Coord3DMode.LIDAR,
                                                Coord3DMode.DEPTH)
-            inds = result['pts_bbox']['scores_3d'] > 0.1
-            gt_bboxes = self.get_ann_info(i)['gt_bboxes_3d'].tensor
-            gt_bboxes = Box3DMode.convert(gt_bboxes, Box3DMode.LIDAR,
-                                          Box3DMode.DEPTH)
-            pred_bboxes = result['pts_bbox']['boxes_3d'][inds].tensor.numpy()
-            pred_bboxes = Box3DMode.convert(pred_bboxes, Box3DMode.LIDAR,
-                                            Box3DMode.DEPTH)
-            show_result(points, gt_bboxes, pred_bboxes, out_dir, file_name)
+            inds = result['scores_3d'] > 0.1
+            gt_bboxes = self.get_ann_info(i)['gt_bboxes_3d'].tensor.numpy()
+            show_gt_bboxes = Box3DMode.convert(gt_bboxes, Box3DMode.LIDAR,
+                                               Box3DMode.DEPTH)
+            pred_bboxes = result['boxes_3d'][inds].tensor.numpy()
+            show_pred_bboxes = Box3DMode.convert(pred_bboxes, Box3DMode.LIDAR,
+                                                 Box3DMode.DEPTH)
+            show_result(points, show_gt_bboxes, show_pred_bboxes, out_dir,
+                        file_name, show)
 
     def json2csv(self, json_path, csv_savepath):
         """Convert the json file to csv format for submission.
@@ -457,6 +506,7 @@ class LyftDataset(Custom3DDataset):
             idx = Id_list.index(token)
             pred_list[idx] = prediction_str
         df = pd.DataFrame({'Id': Id_list, 'PredictionString': pred_list})
+        mmcv.mkdir_or_exist(os.path.dirname(csv_savepath))
         df.to_csv(csv_savepath, index=False)
 
 
@@ -476,16 +526,16 @@ def output_to_lyft_box(detection):
     box_gravity_center = box3d.gravity_center.numpy()
     box_dims = box3d.dims.numpy()
     box_yaw = box3d.yaw.numpy()
-    # TODO: check whether this is necessary
-    # with dir_offset & dir_limit in the head
-    box_yaw = -box_yaw - np.pi / 2
+
+    # our LiDAR coordinate system -> Lyft box coordinate system
+    lyft_box_dims = box_dims[:, [1, 0, 2]]
 
     box_list = []
     for i in range(len(box3d)):
         quat = Quaternion(axis=[0, 0, 1], radians=box_yaw[i])
         box = LyftBox(
             box_gravity_center[i],
-            box_dims[i],
+            lyft_box_dims[i],
             quat,
             label=labels[i],
             score=scores[i])
