@@ -93,23 +93,6 @@ def corners_nd(dims, origin=0.5):
     return corners
 
 
-def rotation_2d(points, angles):
-    """Rotation 2d points based on origin point clockwise when angle positive.
-
-    Args:
-        points (np.ndarray): Points to be rotated with shape \
-            (N, point_size, 2).
-        angles (np.ndarray): Rotation angle with shape (N).
-
-    Returns:
-        np.ndarray: Same shape as points.
-    """
-    rot_sin = np.sin(angles)
-    rot_cos = np.cos(angles)
-    rot_mat_T = np.stack([[rot_cos, -rot_sin], [rot_sin, rot_cos]])
-    return np.einsum('aij,jka->aik', points, rot_mat_T)
-
-
 def center_to_corner_box2d(centers, dims, angles=None, origin=0.5):
     """Convert kitti locations, dimensions and angles to corners.
     format: center(xy), dims(xy), angles(counterclockwise when positive)
@@ -185,37 +168,6 @@ def depth_to_lidar_points(depth, trunc_pixel, P2, r_rect, velo2cam):
     return lidar_points
 
 
-def rotation_3d_in_axis(points, angles, axis=0):
-    """Rotate points in specific axis.
-
-    Args:
-        points (np.ndarray, shape=[N, point_size, 3]]):
-        angles (np.ndarray, shape=[N]]):
-        axis (int): Axis to rotate at.
-
-    Returns:
-        np.ndarray: Rotated points.
-    """
-    # points: [N, point_size, 3]
-    rot_sin = np.sin(angles)
-    rot_cos = np.cos(angles)
-    ones = np.ones_like(rot_cos)
-    zeros = np.zeros_like(rot_cos)
-    if axis == 1:
-        rot_mat_T = np.stack([[rot_cos, zeros, -rot_sin], [zeros, ones, zeros],
-                              [rot_sin, zeros, rot_cos]])
-    elif axis == 2 or axis == -1:
-        rot_mat_T = np.stack([[rot_cos, -rot_sin, zeros],
-                              [rot_sin, rot_cos, zeros], [zeros, zeros, ones]])
-    elif axis == 0:
-        rot_mat_T = np.stack([[zeros, rot_cos, -rot_sin],
-                              [zeros, rot_sin, rot_cos], [ones, zeros, zeros]])
-    else:
-        raise ValueError('axis should in range')
-
-    return np.einsum('aij,jka->aik', points, rot_mat_T)
-
-
 def center_to_corner_box3d(centers,
                            dims,
                            angles=None,
@@ -226,16 +178,19 @@ def center_to_corner_box3d(centers,
     Args:
         centers (np.ndarray): Locations in kitti label file with shape (N, 3).
         dims (np.ndarray): Dimensions in kitti label file with shape (N, 3).
-        angles (np.ndarray): Rotation_y in kitti label file with shape (N).
-        origin (list or array or float): Origin point relate to smallest point.
-            use (0.5, 1.0, 0.5) in camera and (0.5, 0.5, 0) in lidar.
-        axis (int): Rotation axis. 1 for camera and 2 for lidar.
+        angles (np.ndarray, optional): Rotation_y in kitti label file with
+            shape (N). Defaults to None.
+        origin (list or array or float, optional): Origin point relate to
+            smallest point. Use (0.5, 1.0, 0.5) in camera and (0.5, 0.5, 0)
+            in lidar. Defaults to (0.5, 1.0, 0.5).
+        axis (int, optional): Rotation axis. 1 for camera and 2 for lidar.
+            Defaults to 1.
 
     Returns:
         np.ndarray: Corners with the shape of (N, 8, 3).
     """
     # 'length' in kitti format is in x axis.
-    # yzx(hwl)(kitti label file)<->xyz(lhw)(camera)<->z(-x)(-y)(wlh)(lidar)
+    # yzx(hwl)(kitti label file)<->xyz(lhw)(camera)<->z(-x)(-y)(lwh)(lidar)
     # center in kitti format is [0.5, 1.0, 0.5] in xyz.
     corners = corners_nd(dims, origin=origin)
     # corners: [N, 8, 3]
@@ -353,24 +308,6 @@ def rotation_points_single_angle(points, angle, axis=0):
     return points @ rot_mat_T, rot_mat_T
 
 
-def points_cam2img(points_3d, proj_mat):
-    """Project points in camera coordinates to image coordinates.
-
-    Args:
-        points_3d (np.ndarray): Points in shape (N, 3)
-        proj_mat (np.ndarray): Transformation matrix between coordinates.
-
-    Returns:
-        np.ndarray: Points in image coordinates with shape [N, 2].
-    """
-    points_shape = list(points_3d.shape)
-    points_shape[-1] = 1
-    points_4 = np.concatenate([points_3d, np.ones(points_shape)], axis=-1)
-    point_2d = points_4 @ proj_mat.T
-    point_2d_res = point_2d[..., :2] / point_2d[..., 2:3]
-    return point_2d_res
-
-
 def box3d_to_bbox(box3d, P2):
     """Convert box3d in camera coordinates to bbox in image coordinates.
 
@@ -452,22 +389,6 @@ def minmax_to_corner_2d(minmax_box):
     center = minmax_box[..., :ndim]
     dims = minmax_box[..., ndim:] - center
     return center_to_corner_box2d(center, dims, origin=0.0)
-
-
-def limit_period(val, offset=0.5, period=np.pi):
-    """Limit the value into a period for periodic function.
-
-    Args:
-        val (np.ndarray): The value to be converted.
-        offset (float, optional): Offset to set the value range. \
-            Defaults to 0.5.
-        period (float, optional): Period of the value. Defaults to np.pi.
-
-    Returns:
-        torch.Tensor: Value in the range of \
-            [-offset * period, (1-offset) * period]
-    """
-    return val - np.floor(val / period + offset) * period
 
 
 def create_anchors_3d_range(feature_size,

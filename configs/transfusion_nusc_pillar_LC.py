@@ -7,7 +7,7 @@ voxel_size = [0.2, 0.2, 8]
 out_size_factor = 4
 evaluation = dict(interval=1)
 dataset_type = 'NuScenesDataset'
-data_root = 'data/nuscenes/'
+data_root = 'data/nuscenes_mini/'
 input_modality = dict(
     use_lidar=True,
     use_camera=True,
@@ -242,7 +242,9 @@ model = dict(
             voxel_size=voxel_size[:2],
             nms_type=None,
         )))
-optimizer = dict(type='AdamW', lr=0.0001, weight_decay=0.01)  # for 8gpu * 2sample_per_gpu
+# optimizer = dict(type='AdamW', lr=0.0001, weight_decay=0.01)  # for 8gpu * 2sample_per_gpu
+optimizer = dict(type='AdamW', lr=1.25e-5, weight_decay=0.01) # for 1gpu
+
 optimizer_config = dict(grad_clip=dict(max_norm=0.1, norm_type=2))
 lr_config = dict(
     policy='cyclic',
@@ -266,6 +268,7 @@ work_dir = None
 load_from = 'checkpoints/fusion_pillar02_R50.pth'
 resume_from = None
 workflow = [('train', 1)]
-gpu_ids = range(0, 8)
+# gpu_ids = range(0, 8)
+gpu_ids = 0
 freeze_lidar_components = True
 find_unused_parameters = True
