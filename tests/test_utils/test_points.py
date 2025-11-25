@@ -1,4 +1,6 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import numpy as np
+import pytest
 import torch
 
 from mmdet3d.core.points import (BasePoints, CameraPoints, DepthPoints,
@@ -64,6 +66,7 @@ def test_base_points():
                                     ]])
 
     assert torch.allclose(expected_tensor, base_points.tensor)
+    assert torch.allclose(expected_tensor[:, :2], base_points.bev)
     assert torch.allclose(expected_tensor[:, :3], base_points.coord)
     assert torch.allclose(expected_tensor[:, 3:6], base_points.color)
     assert torch.allclose(expected_tensor[:, 6], base_points.height)
@@ -192,6 +195,8 @@ def test_base_points():
         [[9.0722, 47.3678, -2.5382, 0.6666, 0.1956, 0.4974, 0.9409],
          [6.8547, 42.2509, -2.5955, 0.6565, 0.6248, 0.6954, 0.2538]])
     assert torch.allclose(expected_tensor, base_points[mask].tensor, 1e-4)
+    expected_tensor = torch.tensor([[0.6666], [0.1502], [0.6565], [0.2803]])
+    assert torch.allclose(expected_tensor, base_points[:, 3].tensor, 1e-4)
 
     # test length
     assert len(base_points) == 4
@@ -227,6 +232,41 @@ def test_base_points():
     assert torch.allclose(
         new_points.tensor,
         torch.tensor([[1, 2, 3, 4, 5, 6, 7]], dtype=base_points.tensor.dtype))
+
+    # test BasePoint indexing
+    base_points = BasePoints(
+        points_np,
+        points_dim=7,
+        attribute_dims=dict(height=3, color=[4, 5, 6]))
+    assert torch.all(base_points[:, 3:].tensor == torch.tensor(points_np[:,
+                                                                         3:]))
+
+    # test set and get function for BasePoint color and height
+    base_points = BasePoints(points_np[:, :3])
+    assert base_points.attribute_dims is None
+    base_points.height = points_np[:, 3]
+    assert base_points.attribute_dims == dict(height=3)
+    base_points.color = points_np[:, 4:]
+    assert base_points.attribute_dims == dict(height=3, color=[4, 5, 6])
+    assert torch.allclose(base_points.height,
+                          torch.tensor([0.6666, 0.1502, 0.6565, 0.2803]))
+    assert torch.allclose(
+        base_points.color,
+        torch.tensor([[0.1956, 0.4974, 0.9409], [0.3707, 0.1086, 0.6297],
+                      [0.6248, 0.6954, 0.2538], [0.0258, 0.4896, 0.3269]]))
+    # values to be set should have correct shape (e.g. number of points)
+    with pytest.raises(ValueError):
+        base_points.coord = np.random.rand(5, 3)
+    with pytest.raises(ValueError):
+        base_points.height = np.random.rand(3)
+    with pytest.raises(ValueError):
+        base_points.color = np.random.rand(4, 2)
+    base_points.coord = points_np[:, [1, 2, 3]]
+    base_points.height = points_np[:, 0]
+    base_points.color = points_np[:, [4, 5, 6]]
+    assert np.allclose(base_points.coord, points_np[:, 1:4])
+    assert np.allclose(base_points.height, points_np[:, 0])
+    assert np.allclose(base_points.color, points_np[:, 4:])
 
 
 def test_cam_points():
@@ -288,6 +328,7 @@ def test_cam_points():
                                     ]])
 
     assert torch.allclose(expected_tensor, cam_points.tensor)
+    assert torch.allclose(expected_tensor[:, [0, 2]], cam_points.bev)
     assert torch.allclose(expected_tensor[:, :3], cam_points.coord)
     assert torch.allclose(expected_tensor[:, 3:6], cam_points.color)
     assert torch.allclose(expected_tensor[:, 6], cam_points.height)
@@ -415,6 +456,8 @@ def test_cam_points():
         [[9.0722, 47.3678, -2.5382, 0.6666, 0.1956, 0.4974, 0.9409],
          [6.8547, 42.2509, -2.5955, 0.6565, 0.6248, 0.6954, 0.2538]])
     assert torch.allclose(expected_tensor, cam_points[mask].tensor, 1e-4)
+    expected_tensor = torch.tensor([[0.6666], [0.1502], [0.6565], [0.2803]])
+    assert torch.allclose(expected_tensor, cam_points[:, 3].tensor, 1e-4)
 
     # test length
     assert len(cam_points) == 4
@@ -562,6 +605,7 @@ def test_lidar_points():
                                     ]])
 
     assert torch.allclose(expected_tensor, lidar_points.tensor)
+    assert torch.allclose(expected_tensor[:, :2], lidar_points.bev)
     assert torch.allclose(expected_tensor[:, :3], lidar_points.coord)
     assert torch.allclose(expected_tensor[:, 3:6], lidar_points.color)
     assert torch.allclose(expected_tensor[:, 6], lidar_points.height)
@@ -689,6 +733,8 @@ def test_lidar_points():
         [[9.0722, 47.3678, -2.5382, 0.6666, 0.1956, 0.4974, 0.9409],
          [6.8547, 42.2509, -2.5955, 0.6565, 0.6248, 0.6954, 0.2538]])
     assert torch.allclose(expected_tensor, lidar_points[mask].tensor, 1e-4)
+    expected_tensor = torch.tensor([[0.6666], [0.1502], [0.6565], [0.2803]])
+    assert torch.allclose(expected_tensor, lidar_points[:, 3].tensor, 1e-4)
 
     # test length
     assert len(lidar_points) == 4
@@ -836,6 +882,7 @@ def test_depth_points():
                                     ]])
 
     assert torch.allclose(expected_tensor, depth_points.tensor)
+    assert torch.allclose(expected_tensor[:, :2], depth_points.bev)
     assert torch.allclose(expected_tensor[:, :3], depth_points.coord)
     assert torch.allclose(expected_tensor[:, 3:6], depth_points.color)
     assert torch.allclose(expected_tensor[:, 6], depth_points.height)
@@ -963,6 +1010,8 @@ def test_depth_points():
         [[9.0722, 47.3678, -2.5382, 0.6666, 0.1956, 0.4974, 0.9409],
          [6.8547, 42.2509, -2.5955, 0.6565, 0.6248, 0.6954, 0.2538]])
     assert torch.allclose(expected_tensor, depth_points[mask].tensor, 1e-4)
+    expected_tensor = torch.tensor([[0.6666], [0.1502], [0.6565], [0.2803]])
+    assert torch.allclose(expected_tensor, depth_points[:, 3].tensor, 1e-4)
 
     # test length
     assert len(depth_points) == 4

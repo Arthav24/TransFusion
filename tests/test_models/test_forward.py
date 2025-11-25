@@ -1,3 +1,4 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 """Test model forward process.
 
 CommandLine:
@@ -5,9 +6,10 @@ CommandLine:
     xdoctest tests/test_models/test_forward.py zero
 """
 import copy
+from os.path import dirname, exists, join
+
 import numpy as np
 import torch
-from os.path import dirname, exists, join
 
 
 def _get_config_directory():
@@ -147,7 +149,7 @@ def _demo_mm_inputs(input_shape=(1, 3, 300, 300),
         input_shape (tuple):
             input batch dimensions
 
-        num_items (None | List[int]):
+        num_items (List[int]):
             specifies the number of boxes in each batch item
 
         num_classes (int):

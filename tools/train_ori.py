@@ -1,11 +1,8 @@
-# ---------------------------------------------
-# Copyright (c) OpenMMLab. All rights reserved.
-# ---------------------------------------------
-
 from __future__ import division
 
 import argparse
 import copy
+import logging
 import mmcv
 import os
 import time
@@ -15,16 +12,11 @@ from mmcv import Config, DictAction
 from mmcv.runner import get_dist_info, init_dist
 from os import path as osp
 
-from mmdet import __version__ as mmdet_version
-from mmdet3d import __version__ as mmdet3d_version
-from mmdet3d.apis import init_random_seed, train_model
+from mmdet3d import __version__
 from mmdet3d.datasets import build_dataset
-from mmdet3d.models import build_model
+from mmdet3d.models import build_detector
 from mmdet3d.utils import collect_env, get_root_logger
-from mmdet.apis import set_random_seed
-from mmseg import __version__ as mmseg_version
-
-from mmcv.utils import TORCH_VERSION, digit_version
+from mmdet.apis import set_random_seed, train_detector
 
 
 def parse_args():
@@ -107,37 +99,9 @@ def main():
         from mmcv.utils import import_modules_from_strings
         import_modules_from_strings(**cfg['custom_imports'])
 
-    # import modules from plguin/xx, registry will be updated
-    if hasattr(cfg, 'plugin'):
-        if cfg.plugin:
-            import importlib
-            if hasattr(cfg, 'plugin_dir'):
-                plugin_dir = cfg.plugin_dir
-                _module_dir = os.path.dirname(plugin_dir)
-                _module_dir = _module_dir.split('/')
-                _module_path = _module_dir[0]
-
-                for m in _module_dir[1:]:
-                    _module_path = _module_path + '.' + m
-                print(_module_path)
-                plg_lib = importlib.import_module(_module_path)
-            else:
-                # import dir is the dirpath for the config file
-                _module_dir = os.path.dirname(args.config)
-                _module_dir = _module_dir.split('/')
-                _module_path = _module_dir[0]
-                for m in _module_dir[1:]:
-                    _module_path = _module_path + '.' + m
-                print(_module_path)
-                plg_lib = importlib.import_module(_module_path)
-
     # set cudnn_benchmark
     if cfg.get('cudnn_benchmark', False):
         torch.backends.cudnn.benchmark = True
-    # set tf32
-    if cfg.get('close_tf32', False):
-        torch.backends.cuda.matmul.allow_tf32 = False
-        torch.backends.cudnn.allow_tf32 = False
 
     # work_dir is determined in this priority: CLI > segment in file > filename
     if args.work_dir is not None:
@@ -147,15 +111,13 @@ def main():
         # use config filename as default work_dir if cfg.work_dir is None
         cfg.work_dir = osp.join('./work_dirs',
                                 osp.splitext(osp.basename(args.config))[0])
-    # if args.resume_from is not None:
-    if args.resume_from is not None and osp.isfile(args.resume_from):
+    if args.resume_from is not None:
         cfg.resume_from = args.resume_from
     if args.gpu_ids is not None:
         cfg.gpu_ids = args.gpu_ids
     else:
         cfg.gpu_ids = range(1) if args.gpus is None else range(args.gpus)
-    if digit_version(TORCH_VERSION) == digit_version('1.8.1') and cfg.optimizer['type'] == 'AdamW':
-        cfg.optimizer['type'] = 'AdamW2' # fix bug in Adamw
+
     if args.autoscale_lr:
         # apply the linear scaling rule (https://arxiv.org/abs/1706.02677)
         cfg.optimizer['lr'] = cfg.optimizer['lr'] * len(cfg.gpu_ids) / 8
@@ -177,15 +139,11 @@ def main():
     # init the logger before other steps
     timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     log_file = osp.join(cfg.work_dir, f'{timestamp}.log')
-    # specify logger name, if we still use 'mmdet', the output info will be
-    # filtered and won't be saved in the log_file
-    # TODO: ugly workaround to judge whether we are training det or seg model
-    if cfg.model.type in ['EncoderDecoder3D']:
-        logger_name = 'mmseg'
-    else:
-        logger_name = 'mmdet'
-    logger = get_root_logger(
-        log_file=log_file, log_level=cfg.log_level, name=logger_name)
+    logger = get_root_logger(log_file=log_file, log_level=cfg.log_level)
+
+    # add a logging filter
+    logging_filter = logging.Filter('mmdet')
+    logging_filter.filter = lambda record: record.find('mmdet') != -1
 
     # init the meta dict to record some important information such as
     # environment info and seed, which will be logged
@@ -212,11 +170,11 @@ def main():
     meta['seed'] = args.seed
     meta['exp_name'] = osp.basename(args.config)
 
-    model = build_model(
+    model = build_detector(
         cfg.model,
         train_cfg=cfg.get('train_cfg'),
         test_cfg=cfg.get('test_cfg'))
-    model.init_weights()
+
     if 'freeze_lidar_components' in cfg and cfg['freeze_lidar_components'] is True:
         logger.info(f"param need to update:")
         param_grad = []
@@ -277,16 +235,12 @@ def main():
         # save mmdet version, config file content and class names in
         # checkpoints as meta data
         cfg.checkpoint_config.meta = dict(
-            mmdet_version=mmdet_version,
-            mmseg_version=mmseg_version,
-            mmdet3d_version=mmdet3d_version,
+            mmdet_version=__version__,
             config=cfg.pretty_text,
-            CLASSES=datasets[0].CLASSES,
-            PALETTE=datasets[0].PALETTE  # for segmentors
-            if hasattr(datasets[0], 'PALETTE') else None)
+            CLASSES=datasets[0].CLASSES)
     # add an attribute for visualization convenience
     model.CLASSES = datasets[0].CLASSES
-    train_model(
+    train_detector(
         model,
         datasets,
         cfg,
