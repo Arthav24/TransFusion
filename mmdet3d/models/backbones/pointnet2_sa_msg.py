@@ -1,10 +1,11 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import torch
 from mmcv.cnn import ConvModule
 from mmcv.runner import auto_fp16
 from torch import nn as nn
 
 from mmdet3d.ops import build_sa_module
-from mmdet.models import BACKBONES
+from ..builder import BACKBONES
 from .base_pointnet import BasePointNet
 
 
@@ -56,13 +57,18 @@ class PointNet2SAMSG(BasePointNet):
                      type='PointSAModuleMSG',
                      pool_mod='max',
                      use_xyz=True,
-                     normalize_xyz=False)):
-        super().__init__()
+                     normalize_xyz=False),
+                 init_cfg=None):
+        super().__init__(init_cfg=init_cfg)
         self.num_sa = len(sa_channels)
         self.out_indices = out_indices
         assert max(out_indices) < self.num_sa
         assert len(num_points) == len(radii) == len(num_samples) == len(
-            sa_channels) == len(aggregation_channels)
+            sa_channels)
+        if aggregation_channels is not None:
+            assert len(sa_channels) == len(aggregation_channels)
+        else:
+            aggregation_channels = [None] * len(sa_channels)
 
         self.SA_modules = nn.ModuleList()
         self.aggregation_mlps = nn.ModuleList()
@@ -102,15 +108,21 @@ class PointNet2SAMSG(BasePointNet):
                     cfg=sa_cfg,
                     bias=True))
             skip_channel_list.append(sa_out_channel)
-            self.aggregation_mlps.append(
-                ConvModule(
-                    sa_out_channel,
-                    aggregation_channels[sa_index],
-                    conv_cfg=dict(type='Conv1d'),
-                    norm_cfg=dict(type='BN1d'),
-                    kernel_size=1,
-                    bias=True))
-            sa_in_channel = aggregation_channels[sa_index]
+
+            cur_aggregation_channel = aggregation_channels[sa_index]
+            if cur_aggregation_channel is None:
+                self.aggregation_mlps.append(None)
+                sa_in_channel = sa_out_channel
+            else:
+                self.aggregation_mlps.append(
+                    ConvModule(
+                        sa_out_channel,
+                        cur_aggregation_channel,
+                        conv_cfg=dict(type='Conv1d'),
+                        norm_cfg=dict(type='BN1d'),
+                        kernel_size=1,
+                        bias=True))
+                sa_in_channel = cur_aggregation_channel
 
     @auto_fp16(apply_to=('points', ))
     def forward(self, points):
@@ -126,7 +138,7 @@ class PointNet2SAMSG(BasePointNet):
                 - sa_xyz (torch.Tensor): The coordinates of sa features.
                 - sa_features (torch.Tensor): The features from the
                     last Set Aggregation Layers.
-                - sa_indices (torch.Tensor): Indices of the \
+                - sa_indices (torch.Tensor): Indices of the
                     input points.
         """
         xyz, features = self._split_point_feats(points)
@@ -139,14 +151,15 @@ class PointNet2SAMSG(BasePointNet):
         sa_features = [features]
         sa_indices = [indices]
 
-        out_sa_xyz = []
-        out_sa_features = []
-        out_sa_indices = []
+        out_sa_xyz = [xyz]
+        out_sa_features = [features]
+        out_sa_indices = [indices]
 
         for i in range(self.num_sa):
             cur_xyz, cur_features, cur_indices = self.SA_modules[i](
                 sa_xyz[i], sa_features[i])
-            cur_features = self.aggregation_mlps[i](cur_features)
+            if self.aggregation_mlps[i] is not None:
+                cur_features = self.aggregation_mlps[i](cur_features)
             sa_xyz.append(cur_xyz)
             sa_features.append(cur_features)
             sa_indices.append(

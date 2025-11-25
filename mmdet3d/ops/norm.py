@@ -1,3 +1,4 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import torch
 from mmcv.cnn import NORM_LAYERS
 from mmcv.runner import force_fp32
@@ -26,7 +27,7 @@ class AllReduce(Function):
 
 @NORM_LAYERS.register_module('naiveSyncBN1d')
 class NaiveSyncBatchNorm1d(nn.BatchNorm1d):
-    """Syncronized Batch Normalization for 3D Tensors.
+    """Synchronized Batch Normalization for 3D Tensors.
 
     Note:
         This implementation is modified from
@@ -37,7 +38,7 @@ class NaiveSyncBatchNorm1d(nn.BatchNorm1d):
         when the batch size on each worker is quite different
         (e.g., when scale augmentation is used).
         In 3D detection, different workers has points of different shapes,
-        whish also cause instability.
+        which also cause instability.
 
         Use this implementation before `nn.SyncBatchNorm` is fixed.
         It is slower than `nn.SyncBatchNorm`.
@@ -52,11 +53,27 @@ class NaiveSyncBatchNorm1d(nn.BatchNorm1d):
     # TODO: make mmcv fp16 utils handle customized norm layers
     @force_fp32(out_fp16=True)
     def forward(self, input):
+        """
+        Args:
+            input (tensor): Has shape (N, C) or (N, C, L), where N is
+                the batch size, C is the number of features or
+                channels, and L is the sequence length
+
+        Returns:
+            tensor: Has shape (N, C) or (N, C, L), has same shape
+            as input.
+        """
         assert input.dtype == torch.float32, \
             f'input should be in float32 type, got {input.dtype}'
-        if dist.get_world_size() == 1 or not self.training:
+        using_dist = dist.is_available() and dist.is_initialized()
+        if (not using_dist) or dist.get_world_size() == 1 \
+                or not self.training:
             return super().forward(input)
         assert input.shape[0] > 0, 'SyncBN does not support empty inputs'
+        is_two_dim = input.dim() == 2
+        if is_two_dim:
+            input = input.unsqueeze(2)
+
         C = input.shape[1]
         mean = torch.mean(input, dim=[0, 2])
         meansqr = torch.mean(input * input, dim=[0, 2])
@@ -75,12 +92,15 @@ class NaiveSyncBatchNorm1d(nn.BatchNorm1d):
         bias = self.bias - mean * scale
         scale = scale.reshape(1, -1, 1)
         bias = bias.reshape(1, -1, 1)
-        return input * scale + bias
+        output = input * scale + bias
+        if is_two_dim:
+            output = output.squeeze(2)
+        return output
 
 
 @NORM_LAYERS.register_module('naiveSyncBN2d')
 class NaiveSyncBatchNorm2d(nn.BatchNorm2d):
-    """Syncronized Batch Normalization for 4D Tensors.
+    """Synchronized Batch Normalization for 4D Tensors.
 
     Note:
         This implementation is modified from
@@ -106,9 +126,19 @@ class NaiveSyncBatchNorm2d(nn.BatchNorm2d):
     # TODO: make mmcv fp16 utils handle customized norm layers
     @force_fp32(out_fp16=True)
     def forward(self, input):
+        """
+        Args:
+            Input (tensor): Feature has shape (N, C, H, W).
+
+        Returns:
+            tensor: Has shape (N, C, H, W), same shape as input.
+        """
         assert input.dtype == torch.float32, \
             f'input should be in float32 type, got {input.dtype}'
-        if dist.get_world_size() == 1 or not self.training:
+        using_dist = dist.is_available() and dist.is_initialized()
+        if (not using_dist) or \
+                dist.get_world_size() == 1 or \
+                not self.training:
             return super().forward(input)
 
         assert input.shape[0] > 0, 'SyncBN does not support empty inputs'

@@ -27,8 +27,8 @@ class TransFusionDetector(MVXTwoStageDetector):
 
     def init_weights(self, pretrained=None):
         """Initialize model weights."""
-        super(TransFusionDetector, self).init_weights(pretrained)
-
+        # super(TransFusionDetector, self).init_weights(pretrained) super class doesn't take pretrained argument
+        super(TransFusionDetector, self).init_weights()
         if self.freeze_img:
             if self.with_img_backbone:
                 for param in self.img_backbone.parameters():

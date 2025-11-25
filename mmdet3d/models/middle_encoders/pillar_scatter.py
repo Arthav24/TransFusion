@@ -1,8 +1,9 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import torch
 from mmcv.runner import auto_fp16
 from torch import nn
 
-from ..registry import MIDDLE_ENCODERS
+from ..builder import MIDDLE_ENCODERS
 
 
 @MIDDLE_ENCODERS.register_module()
@@ -26,7 +27,7 @@ class PointPillarsScatter(nn.Module):
 
     @auto_fp16(apply_to=('voxel_features', ))
     def forward(self, voxel_features, coors, batch_size=None):
-        """Foraward function to scatter features."""
+        """Forward function to scatter features."""
         # TODO: rewrite the function in a batch manner
         # no need to deal with different batch cases
         if batch_size is not None:
@@ -38,7 +39,7 @@ class PointPillarsScatter(nn.Module):
         """Scatter features of single sample.
 
         Args:
-            voxel_features (torch.Tensor): Voxel features in shape (N, M, C).
+            voxel_features (torch.Tensor): Voxel features in shape (N, C).
             coors (torch.Tensor): Coordinates of each voxel.
                 The first column indicates the sample ID.
         """
@@ -49,20 +50,20 @@ class PointPillarsScatter(nn.Module):
             dtype=voxel_features.dtype,
             device=voxel_features.device)
 
-        indices = coors[:, 1] * self.nx + coors[:, 2]
+        indices = coors[:, 2] * self.nx + coors[:, 3]
         indices = indices.long()
         voxels = voxel_features.t()
         # Now scatter the blob back to the canvas.
         canvas[:, indices] = voxels
         # Undo the column stacking to final 4-dim tensor
         canvas = canvas.view(1, self.in_channels, self.ny, self.nx)
-        return [canvas]
+        return canvas
 
     def forward_batch(self, voxel_features, coors, batch_size):
         """Scatter features of single sample.
 
         Args:
-            voxel_features (torch.Tensor): Voxel features in shape (N, M, C).
+            voxel_features (torch.Tensor): Voxel features in shape (N, C).
             coors (torch.Tensor): Coordinates of each voxel in shape (N, 4).
                 The first column indicates the sample ID.
             batch_size (int): Number of samples in the current batch.

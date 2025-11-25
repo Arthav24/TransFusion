@@ -1,4 +1,7 @@
-from .registry import SA_MODULES
+# Copyright (c) OpenMMLab. All rights reserved.
+from mmcv.utils import Registry
+
+SA_MODULES = Registry('point_sa_module')
 
 
 def build_sa_module(cfg, *args, **kwargs):

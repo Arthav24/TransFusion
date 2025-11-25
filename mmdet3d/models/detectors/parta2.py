@@ -1,9 +1,10 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import torch
+from mmcv.ops import Voxelization
 from torch.nn import functional as F
 
-from mmdet3d.ops import Voxelization
-from mmdet.models import DETECTORS
 from .. import builder
+from ..builder import DETECTORS
 from .two_stage import TwoStage3DDetector
 
 
@@ -24,7 +25,8 @@ class PartA2(TwoStage3DDetector):
                  roi_head=None,
                  train_cfg=None,
                  test_cfg=None,
-                 pretrained=None):
+                 pretrained=None,
+                 init_cfg=None):
         super(PartA2, self).__init__(
             backbone=backbone,
             neck=neck,
@@ -33,7 +35,7 @@ class PartA2(TwoStage3DDetector):
             train_cfg=train_cfg,
             test_cfg=test_cfg,
             pretrained=pretrained,
-        )
+            init_cfg=init_cfg)
         self.voxel_layer = Voxelization(**voxel_layer)
         self.voxel_encoder = builder.build_voxel_encoder(voxel_encoder)
         self.middle_encoder = builder.build_middle_encoder(middle_encoder)

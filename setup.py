@@ -1,6 +1,11 @@
+import os
+import platform
+import shutil
+import sys
+import warnings
+from os import path as osp
 from setuptools import find_packages, setup
 
-import os
 import torch
 from torch.utils.cpp_extension import (BuildExtension, CppExtension,
                                        CUDAExtension)
@@ -136,7 +141,59 @@ def parse_requirements(fname='requirements.txt', with_version=True):
     return packages
 
 
+def add_mim_extension():
+    """Add extra files that are required to support MIM into the package.
+
+    These files will be added by creating a symlink to the originals if the
+    package is installed in `editable` mode (e.g. pip install -e .), or by
+    copying from the originals otherwise.
+    """
+
+    # parse installment mode
+    if 'develop' in sys.argv:
+        # installed by `pip install -e .`
+        if platform.system() == 'Windows':
+            # set `copy` mode here since symlink fails on Windows.
+            mode = 'copy'
+        else:
+            mode = 'symlink'
+    elif 'sdist' in sys.argv or 'bdist_wheel' in sys.argv:
+        # or create source distribution by `python setup.py sdist`
+        mode = 'copy'
+    else:
+        return
+
+    filenames = ['tools', 'configs', 'model-index.yml']
+    repo_path = osp.dirname(__file__)
+    mim_path = osp.join(repo_path, 'mmdet3d', '.mim')
+    os.makedirs(mim_path, exist_ok=True)
+
+    for filename in filenames:
+        if osp.exists(filename):
+            src_path = osp.join(repo_path, filename)
+            tar_path = osp.join(mim_path, filename)
+
+            if osp.isfile(tar_path) or osp.islink(tar_path):
+                os.remove(tar_path)
+            elif osp.isdir(tar_path):
+                shutil.rmtree(tar_path)
+
+            if mode == 'symlink':
+                src_relpath = osp.relpath(src_path, osp.dirname(tar_path))
+                os.symlink(src_relpath, tar_path)
+            elif mode == 'copy':
+                if osp.isfile(src_path):
+                    shutil.copyfile(src_path, tar_path)
+                elif osp.isdir(src_path):
+                    shutil.copytree(src_path, tar_path)
+                else:
+                    warnings.warn(f'Cannot copy file {src_path}.')
+            else:
+                raise ValueError(f'Invalid mode {mode}')
+
+
 if __name__ == '__main__':
+    add_mim_extension()
     setup(
         name='mmdet3d',
         version=get_version(),
@@ -144,11 +201,12 @@ if __name__ == '__main__':
                      'for general 3D object detection.'),
         long_description=readme(),
         long_description_content_type='text/markdown',
-        author='OpenMMLab',
+        author='MMDetection3D Contributors',
         author_email='zwwdev@gmail.com',
         keywords='computer vision, 3D object detection',
         url='https://github.com/open-mmlab/mmdetection3d',
         packages=find_packages(exclude=('configs', 'tools', 'demo')),
+        include_package_data=True,
         package_data={'mmdet3d.ops': ['*/*.so']},
         classifiers=[
             'Development Status :: 4 - Beta',
@@ -159,96 +217,14 @@ if __name__ == '__main__':
             'Programming Language :: Python :: 3.7',
         ],
         license='Apache License 2.0',
-        setup_requires=parse_requirements('requirements/build.txt'),
-        tests_require=parse_requirements('requirements/tests.txt'),
-        install_requires=parse_requirements('requirements/runtime.txt'),
+        # install_requires=parse_requirements('requirements/runtime.txt'),
         extras_require={
-            'all': parse_requirements('requirements.txt'),
-            'tests': parse_requirements('requirements/tests.txt'),
-            'build': parse_requirements('requirements/build.txt'),
-            'optional': parse_requirements('requirements/optional.txt'),
+            # 'all': parse_requirements('requirements.txt'),
+            # 'tests': parse_requirements('requirements/tests.txt'),
+            # 'build': parse_requirements('requirements/build.txt'),
+            # 'optional': parse_requirements('requirements/optional.txt'),
+            'mim': parse_requirements('requirements/mminstall.txt'),
         },
-        ext_modules=[
-            make_cuda_ext(
-                name='sparse_conv_ext',
-                module='mmdet3d.ops.spconv',
-                extra_include_path=[
-                    # PyTorch 1.5 uses ninjia, which requires absolute path
-                    # of included files, relative path will cause failure.
-                    os.path.abspath(
-                        os.path.join(*'mmdet3d.ops.spconv'.split('.'),
-                                     'include/'))
-                ],
-                sources=[
-                    'src/all.cc',
-                    'src/reordering.cc',
-                    'src/reordering_cuda.cu',
-                    'src/indice.cc',
-                    'src/indice_cuda.cu',
-                    'src/maxpool.cc',
-                    'src/maxpool_cuda.cu',
-                ],
-                extra_args=['-w', '-std=c++14']),
-            make_cuda_ext(
-                name='iou3d_cuda',
-                module='mmdet3d.ops.iou3d',
-                sources=[
-                    'src/iou3d.cpp',
-                    'src/iou3d_kernel.cu',
-                ]),
-            make_cuda_ext(
-                name='voxel_layer',
-                module='mmdet3d.ops.voxel',
-                sources=[
-                    'src/voxelization.cpp',
-                    'src/scatter_points_cpu.cpp',
-                    'src/scatter_points_cuda.cu',
-                    'src/voxelization_cpu.cpp',
-                    'src/voxelization_cuda.cu',
-                ]),
-            make_cuda_ext(
-                name='roiaware_pool3d_ext',
-                module='mmdet3d.ops.roiaware_pool3d',
-                sources=[
-                    'src/roiaware_pool3d.cpp',
-                    'src/points_in_boxes_cpu.cpp',
-                ],
-                sources_cuda=[
-                    'src/roiaware_pool3d_kernel.cu',
-                    'src/points_in_boxes_cuda.cu',
-                ]),
-            make_cuda_ext(
-                name='ball_query_ext',
-                module='mmdet3d.ops.ball_query',
-                sources=['src/ball_query.cpp'],
-                sources_cuda=['src/ball_query_cuda.cu']),
-            make_cuda_ext(
-                name='knn_ext',
-                module='mmdet3d.ops.knn',
-                sources=['src/knn.cpp'],
-                sources_cuda=['src/knn_cuda.cu']),
-            make_cuda_ext(
-                name='group_points_ext',
-                module='mmdet3d.ops.group_points',
-                sources=['src/group_points.cpp'],
-                sources_cuda=['src/group_points_cuda.cu']),
-            make_cuda_ext(
-                name='interpolate_ext',
-                module='mmdet3d.ops.interpolate',
-                sources=['src/interpolate.cpp'],
-                sources_cuda=[
-                    'src/three_interpolate_cuda.cu', 'src/three_nn_cuda.cu'
-                ]),
-            make_cuda_ext(
-                name='furthest_point_sample_ext',
-                module='mmdet3d.ops.furthest_point_sample',
-                sources=['src/furthest_point_sample.cpp'],
-                sources_cuda=['src/furthest_point_sample_cuda.cu']),
-            make_cuda_ext(
-                name='gather_points_ext',
-                module='mmdet3d.ops.gather_points',
-                sources=['src/gather_points.cpp'],
-                sources_cuda=['src/gather_points_cuda.cu'])
-        ],
+        # ext_modules=[],
         cmdclass={'build_ext': BuildExtension},
         zip_safe=False)

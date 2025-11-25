@@ -1,3 +1,4 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 from mmdet.models.backbones import RegNet
 from ..builder import BACKBONES
 
@@ -15,7 +16,7 @@ class NoStemRegNet(RegNet):
             - wm (float): Quantization parameter to quantize the width.
             - depth (int): Depth of the backbone.
             - group_w (int): Width of group.
-            - bot_mul (float): Bottleneck ratio, i.e. expansion of bottlneck.
+            - bot_mul (float): Bottleneck ratio, i.e. expansion of bottleneck.
         strides (Sequence[int]): Strides of the first block of each stage.
         base_channels (int): Base channels after stem layer.
         in_channels (int): Number of input image channels. Normally 3.
@@ -57,8 +58,8 @@ class NoStemRegNet(RegNet):
         (1, 1008, 1, 1)
     """
 
-    def __init__(self, arch, **kwargs):
-        super(NoStemRegNet, self).__init__(arch, **kwargs)
+    def __init__(self, arch, init_cfg=None, **kwargs):
+        super(NoStemRegNet, self).__init__(arch, init_cfg=init_cfg, **kwargs)
 
     def _make_stem_layer(self, in_channels, base_channels):
         """Override the original function that do not initialize a stem layer

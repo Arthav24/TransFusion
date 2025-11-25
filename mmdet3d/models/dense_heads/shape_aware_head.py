@@ -1,17 +1,20 @@
+# Copyright (c) OpenMMLab. All rights reserved.
+import warnings
+
 import numpy as np
 import torch
-from mmcv.cnn import ConvModule, bias_init_with_prob, normal_init
+from mmcv.cnn import ConvModule
+from mmcv.runner import BaseModule
 from torch import nn as nn
 
 from mmdet3d.core import box3d_multiclass_nms, limit_period, xywhr2xyxyr
 from mmdet.core import multi_apply
-from mmdet.models import HEADS
-from ..builder import build_head
+from ..builder import HEADS, build_head
 from .anchor3d_head import Anchor3DHead
 
 
 @HEADS.register_module()
-class BaseShapeHead(nn.Module):
+class BaseShapeHead(BaseModule):
     """Base Shape-aware Head in Shape Signature Network.
 
     Note:
@@ -27,15 +30,17 @@ class BaseShapeHead(nn.Module):
         num_base_anchors (int): Number of anchors per location.
         box_code_size (int): The dimension of boxes to be encoded.
         in_channels (int): Input channels for convolutional layers.
-        shared_conv_channels (tuple): Channels for shared convolutional \
-            layers. Default: (64, 64). \
-        shared_conv_strides (tuple): Strides for shared convolutional \
-            layers. Default: (1, 1).
-        use_direction_classifier (bool, optional): Whether to use direction \
+        shared_conv_channels (tuple, optional): Channels for shared
+            convolutional layers. Default: (64, 64).
+        shared_conv_strides (tuple, optional): Strides for shared
+            convolutional layers. Default: (1, 1).
+        use_direction_classifier (bool, optional): Whether to use direction
             classifier. Default: True.
-        conv_cfg (dict): Config of conv layer. Default: dict(type='Conv2d')
-        norm_cfg (dict): Config of norm layer. Default: dict(type='BN2d').
-        bias (bool|str, optional): Type of bias. Default: False.
+        conv_cfg (dict, optional): Config of conv layer.
+            Default: dict(type='Conv2d')
+        norm_cfg (dict, optional): Config of norm layer.
+            Default: dict(type='BN2d').
+        bias (bool | str, optional): Type of bias. Default: False.
     """
 
     def __init__(self,
@@ -48,8 +53,9 @@ class BaseShapeHead(nn.Module):
                  use_direction_classifier=True,
                  conv_cfg=dict(type='Conv2d'),
                  norm_cfg=dict(type='BN2d'),
-                 bias=False):
-        super().__init__()
+                 bias=False,
+                 init_cfg=None):
+        super().__init__(init_cfg=init_cfg)
         self.num_cls = num_cls
         self.num_base_anchors = num_base_anchors
         self.use_direction_classifier = use_direction_classifier
@@ -84,15 +90,36 @@ class BaseShapeHead(nn.Module):
         if use_direction_classifier:
             self.conv_dir_cls = nn.Conv2d(out_channels, num_base_anchors * 2,
                                           1)
-
-    def init_weights(self):
-        """Initialize weights."""
-        bias_cls = bias_init_with_prob(0.01)
-        # shared conv layers have already been initialized by ConvModule
-        normal_init(self.conv_cls, std=0.01, bias=bias_cls)
-        normal_init(self.conv_reg, std=0.01)
-        if self.use_direction_classifier:
-            normal_init(self.conv_dir_cls, std=0.01, bias=bias_cls)
+        if init_cfg is None:
+            if use_direction_classifier:
+                self.init_cfg = dict(
+                    type='Kaiming',
+                    layer='Conv2d',
+                    override=[
+                        dict(type='Normal', name='conv_reg', std=0.01),
+                        dict(
+                            type='Normal',
+                            name='conv_cls',
+                            std=0.01,
+                            bias_prob=0.01),
+                        dict(
+                            type='Normal',
+                            name='conv_dir_cls',
+                            std=0.01,
+                            bias_prob=0.01)
+                    ])
+            else:
+                self.init_cfg = dict(
+                    type='Kaiming',
+                    layer='Conv2d',
+                    override=[
+                        dict(type='Normal', name='conv_reg', std=0.01),
+                        dict(
+                            type='Normal',
+                            name='conv_cls',
+                            std=0.01,
+                            bias_prob=0.01)
+                    ])
 
     def forward(self, x):
         """Forward function for SmallHead.
@@ -102,11 +129,11 @@ class BaseShapeHead(nn.Module):
                 [B, C, H, W].
 
         Returns:
-            dict[torch.Tensor]: Contain score of each class, bbox \
-                regression and direction classification predictions. \
-                Note that all the returned tensors are reshaped as \
-                [bs*num_base_anchors*H*W, num_cls/box_code_size/dir_bins]. \
-                It is more convenient to concat anchors for different \
+            dict[torch.Tensor]: Contain score of each class, bbox
+                regression and direction classification predictions.
+                Note that all the returned tensors are reshaped as
+                [bs*num_base_anchors*H*W, num_cls/box_code_size/dir_bins].
+                It is more convenient to concat anchors for different
                 classes even though they have different feature map sizes.
         """
         x = self.shared_conv(x)
@@ -143,16 +170,27 @@ class ShapeAwareHead(Anchor3DHead):
 
     Args:
         tasks (dict): Shape-aware groups of multi-class objects.
-        assign_per_class (bool, optional): Whether to do assignment for each \
+        assign_per_class (bool, optional): Whether to do assignment for each
             class. Default: True.
-        kwargs (dict): Other arguments are the same as those in \
+        kwargs (dict): Other arguments are the same as those in
             :class:`Anchor3DHead`.
     """
 
-    def __init__(self, tasks, assign_per_class=True, **kwargs):
+    def __init__(self, tasks, assign_per_class=True, init_cfg=None, **kwargs):
         self.tasks = tasks
         self.featmap_sizes = []
-        super().__init__(assign_per_class=assign_per_class, **kwargs)
+        super().__init__(
+            assign_per_class=assign_per_class, init_cfg=init_cfg, **kwargs)
+
+    def init_weights(self):
+        if not self._is_init:
+            for m in self.heads:
+                if hasattr(m, 'init_weights'):
+                    m.init_weights()
+            self._is_init = True
+        else:
+            warnings.warn(f'init_weights of {self.__class__.__name__} has '
+                          f'been called more than once.')
 
     def _init_layers(self):
         """Initialize neural network layers of the head."""
@@ -175,18 +213,13 @@ class ShapeAwareHead(Anchor3DHead):
             self.heads.append(build_head(branch))
             cls_ptr += task['num_class']
 
-    def init_weights(self):
-        """Initialize the weights of head."""
-        for head in self.heads:
-            head.init_weights()
-
     def forward_single(self, x):
         """Forward function on a single-scale feature map.
 
         Args:
             x (torch.Tensor): Input features.
         Returns:
-            tuple[torch.Tensor]: Contain score of each class, bbox \
+            tuple[torch.Tensor]: Contain score of each class, bbox
                 regression and direction classification predictions.
         """
         results = []
@@ -232,7 +265,7 @@ class ShapeAwareHead(Anchor3DHead):
             num_total_samples (int): The number of valid samples.
 
         Returns:
-            tuple[torch.Tensor]: Losses of class, bbox \
+            tuple[torch.Tensor]: Losses of class, bbox
                 and direction, respectively.
         """
         # classification loss
@@ -294,16 +327,16 @@ class ShapeAwareHead(Anchor3DHead):
                 of each sample.
             gt_labels (list[torch.Tensor]): Gt labels of each sample.
             input_metas (list[dict]): Contain pcd and img's meta info.
-            gt_bboxes_ignore (None | list[torch.Tensor]): Specify
+            gt_bboxes_ignore (list[torch.Tensor]): Specify
                 which bounding.
 
         Returns:
-            dict[str, list[torch.Tensor]]: Classification, bbox, and \
+            dict[str, list[torch.Tensor]]: Classification, bbox, and
                 direction losses of each level.
 
                 - loss_cls (list[torch.Tensor]): Classification losses.
                 - loss_bbox (list[torch.Tensor]): Box regression losses.
-                - loss_dir (list[torch.Tensor]): Direction classification \
+                - loss_dir (list[torch.Tensor]): Direction classification
                     losses.
         """
         device = cls_scores[0].device
@@ -357,7 +390,7 @@ class ShapeAwareHead(Anchor3DHead):
             dir_cls_preds (list[torch.Tensor]): Multi-level direction
                 class predictions.
             input_metas (list[dict]): Contain pcd and img's meta info.
-            cfg (None | :obj:`ConfigDict`): Training or testing config.
+            cfg (:obj:`ConfigDict`, optional): Training or testing config.
                 Default: None.
             rescale (list[torch.Tensor], optional): Whether to rescale bbox.
                 Default: False.
@@ -412,8 +445,8 @@ class ShapeAwareHead(Anchor3DHead):
             mlvl_anchors (List[torch.Tensor]): Multi-level anchors
                 in single batch.
             input_meta (list[dict]): Contain pcd and img's meta info.
-            cfg (None | :obj:`ConfigDict`): Training or testing config.
-            rescale (list[torch.Tensor], optional): whether to rescale bbox. \
+            cfg (:obj:`ConfigDict`): Training or testing config.
+            rescale (list[torch.Tensor], optional): whether to rescale bbox.
                 Default: False.
 
         Returns:

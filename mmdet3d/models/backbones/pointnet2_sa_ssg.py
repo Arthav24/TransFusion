@@ -1,9 +1,10 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import torch
 from mmcv.runner import auto_fp16
 from torch import nn as nn
 
 from mmdet3d.ops import PointFPModule, build_sa_module
-from mmdet.models import BACKBONES
+from ..builder import BACKBONES
 from .base_pointnet import BasePointNet
 
 
@@ -43,8 +44,9 @@ class PointNet2SASSG(BasePointNet):
                      type='PointSAModule',
                      pool_mod='max',
                      use_xyz=True,
-                     normalize_xyz=True)):
-        super().__init__()
+                     normalize_xyz=True),
+                 init_cfg=None):
+        super().__init__(init_cfg=init_cfg)
         self.num_sa = len(sa_channels)
         self.num_fp = len(fp_channels)
 
@@ -95,11 +97,11 @@ class PointNet2SASSG(BasePointNet):
         Returns:
             dict[str, list[torch.Tensor]]: Outputs after SA and FP modules.
 
-                - fp_xyz (list[torch.Tensor]): The coordinates of \
+                - fp_xyz (list[torch.Tensor]): The coordinates of
                     each fp features.
-                - fp_features (list[torch.Tensor]): The features \
+                - fp_features (list[torch.Tensor]): The features
                     from each Feature Propagate Layers.
-                - fp_indices (list[torch.Tensor]): Indices of the \
+                - fp_indices (list[torch.Tensor]): Indices of the
                     input points.
         """
         xyz, features = self._split_point_feats(points)
@@ -132,5 +134,10 @@ class PointNet2SASSG(BasePointNet):
             fp_indices.append(sa_indices[self.num_sa - i - 1])
 
         ret = dict(
-            fp_xyz=fp_xyz, fp_features=fp_features, fp_indices=fp_indices)
+            fp_xyz=fp_xyz,
+            fp_features=fp_features,
+            fp_indices=fp_indices,
+            sa_xyz=sa_xyz,
+            sa_features=sa_features,
+            sa_indices=sa_indices)
         return ret

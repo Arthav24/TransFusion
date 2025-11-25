@@ -1,6 +1,6 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 from mmdet3d.core.bbox import bbox3d2result
-from mmdet.models import HEADS
-from ..builder import build_head
+from ..builder import HEADS, build_head
 from .base_3droi_head import Base3DRoIHead
 
 
@@ -19,19 +19,20 @@ class H3DRoIHead(Base3DRoIHead):
                  primitive_list,
                  bbox_head=None,
                  train_cfg=None,
-                 test_cfg=None):
+                 test_cfg=None,
+                 pretrained=None,
+                 init_cfg=None):
         super(H3DRoIHead, self).__init__(
-            bbox_head=bbox_head, train_cfg=train_cfg, test_cfg=test_cfg)
+            bbox_head=bbox_head,
+            train_cfg=train_cfg,
+            test_cfg=test_cfg,
+            pretrained=pretrained,
+            init_cfg=init_cfg)
         # Primitive module
         assert len(primitive_list) == 3
         self.primitive_z = build_head(primitive_list[0])
         self.primitive_xy = build_head(primitive_list[1])
         self.primitive_line = build_head(primitive_list[2])
-
-    def init_weights(self, pretrained):
-        """Initialize weights, skip since ``H3DROIHead`` does not need to
-        initialize weights."""
-        pass
 
     def init_mask_head(self):
         """Initialize mask head, skip since ``H3DROIHead`` does not have
@@ -63,15 +64,15 @@ class H3DRoIHead(Base3DRoIHead):
             feats_dict (dict): Contains features from the first stage.
             img_metas (list[dict]): Contain pcd and img's meta info.
             points (list[torch.Tensor]): Input points.
-            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth \
+            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth
                 bboxes of each sample.
             gt_labels_3d (list[torch.Tensor]): Labels of each sample.
-            pts_semantic_mask (None | list[torch.Tensor]): Point-wise
+            pts_semantic_mask (list[torch.Tensor]): Point-wise
                 semantic mask.
-            pts_instance_mask (None | list[torch.Tensor]): Point-wise
+            pts_instance_mask (list[torch.Tensor]): Point-wise
                 instance mask.
-            gt_bboxes_ignore (None | list[torch.Tensor]): Specify
-                which bounding.
+            gt_bboxes_ignore (list[torch.Tensor]): Specify
+                which bounding boxes to ignore.
 
         Returns:
             dict: losses from each head.

@@ -1,7 +1,8 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import torch
 
 from mmdet3d.core import bbox3d2result, merge_aug_bboxes_3d
-from mmdet.models import DETECTORS
+from ..builder import DETECTORS
 from .mvx_two_stage import MVXTwoStageDetector
 
 
@@ -23,13 +24,20 @@ class CenterPoint(MVXTwoStageDetector):
                  img_rpn_head=None,
                  train_cfg=None,
                  test_cfg=None,
-                 pretrained=None):
+                 pretrained=None,
+                 init_cfg=None):
         super(CenterPoint,
               self).__init__(pts_voxel_layer, pts_voxel_encoder,
                              pts_middle_encoder, pts_fusion_layer,
                              img_backbone, pts_backbone, img_neck, pts_neck,
                              pts_bbox_head, img_roi_head, img_rpn_head,
-                             train_cfg, test_cfg, pretrained)
+                             train_cfg, test_cfg, pretrained, init_cfg)
+
+    @property
+    def with_velocity(self):
+        """bool: Whether the head predicts velocity"""
+        return self.pts_bbox_head is not None and \
+            self.pts_bbox_head.with_velocity
 
     def extract_pts_feat(self, pts, img_feats, img_metas):
         """Extract features of points."""
@@ -95,7 +103,8 @@ class CenterPoint(MVXTwoStageDetector):
         Args:
             feats (list[torch.Tensor]): Feature of point cloud.
             img_metas (list[dict]): Meta information of samples.
-            rescale (bool): Whether to rescale bboxes. Default: False.
+            rescale (bool, optional): Whether to rescale bboxes.
+                Default: False.
 
         Returns:
             dict: Returned bboxes consists of the following keys:
@@ -119,8 +128,8 @@ class CenterPoint(MVXTwoStageDetector):
                                 task_id][0][key][:, 1, ...]
                         elif key == 'rot':
                             outs[task_id][0][
-                                key][:, 1,
-                                     ...] = -outs[task_id][0][key][:, 1, ...]
+                                key][:, 0,
+                                     ...] = -outs[task_id][0][key][:, 0, ...]
                         elif key == 'vel':
                             outs[task_id][0][
                                 key][:, 1,
@@ -133,8 +142,8 @@ class CenterPoint(MVXTwoStageDetector):
                                 task_id][0][key][:, 0, ...]
                         elif key == 'rot':
                             outs[task_id][0][
-                                key][:, 0,
-                                     ...] = -outs[task_id][0][key][:, 0, ...]
+                                key][:, 1,
+                                     ...] = -outs[task_id][0][key][:, 1, ...]
                         elif key == 'vel':
                             outs[task_id][0][
                                 key][:, 0,

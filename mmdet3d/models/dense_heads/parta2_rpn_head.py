@@ -1,12 +1,11 @@
-from __future__ import division
-
+# Copyright (c) OpenMMLab. All rights reserved.
 import numpy as np
 import torch
 from mmcv.runner import force_fp32
 
 from mmdet3d.core import limit_period, xywhr2xyxyr
-from mmdet3d.ops.iou3d.iou3d_utils import nms_gpu, nms_normal_gpu
-from mmdet.models import HEADS
+from mmdet3d.core.post_processing import nms_bev, nms_normal_bev
+from ..builder import HEADS
 from .anchor3d_head import Anchor3DHead
 
 
@@ -59,15 +58,15 @@ class PartA2RPNHead(Anchor3DHead):
                      type='Anchor3DRangeGenerator',
                      range=[0, -39.68, -1.78, 69.12, 39.68, -1.78],
                      strides=[2],
-                     sizes=[[1.6, 3.9, 1.56]],
+                     sizes=[[3.9, 1.6, 1.56]],
                      rotations=[0, 1.57],
                      custom_values=[],
                      reshape_out=False),
                  assigner_per_size=False,
                  assign_per_class=False,
                  diff_rad_by_sin=True,
-                 dir_offset=0,
-                 dir_limit_offset=1,
+                 dir_offset=-np.pi / 2,
+                 dir_limit_offset=0,
                  bbox_coder=dict(type='DeltaXYZWLHRBBoxCoder'),
                  loss_cls=dict(
                      type='CrossEntropyLoss',
@@ -75,12 +74,13 @@ class PartA2RPNHead(Anchor3DHead):
                      loss_weight=1.0),
                  loss_bbox=dict(
                      type='SmoothL1Loss', beta=1.0 / 9.0, loss_weight=2.0),
-                 loss_dir=dict(type='CrossEntropyLoss', loss_weight=0.2)):
+                 loss_dir=dict(type='CrossEntropyLoss', loss_weight=0.2),
+                 init_cfg=None):
         super().__init__(num_classes, in_channels, train_cfg, test_cfg,
                          feat_channels, use_direction_classifier,
                          anchor_generator, assigner_per_size, assign_per_class,
                          diff_rad_by_sin, dir_offset, dir_limit_offset,
-                         bbox_coder, loss_cls, loss_bbox, loss_dir)
+                         bbox_coder, loss_cls, loss_bbox, loss_dir, init_cfg)
 
     @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'dir_cls_preds'))
     def loss(self,
@@ -98,20 +98,20 @@ class PartA2RPNHead(Anchor3DHead):
             bbox_preds (list[torch.Tensor]): Multi-level bbox predictions.
             dir_cls_preds (list[torch.Tensor]): Multi-level direction
                 class predictions.
-            gt_bboxes (list[:obj:`BaseInstance3DBoxes`]): Ground truth boxes \
+            gt_bboxes (list[:obj:`BaseInstance3DBoxes`]): Ground truth boxes
                 of each sample.
             gt_labels (list[torch.Tensor]): Labels of each sample.
             input_metas (list[dict]): Point cloud and image's meta info.
-            gt_bboxes_ignore (None | list[torch.Tensor]): Specify
+            gt_bboxes_ignore (list[torch.Tensor]): Specify
                 which bounding.
 
         Returns:
-            dict[str, list[torch.Tensor]]: Classification, bbox, and \
+            dict[str, list[torch.Tensor]]: Classification, bbox, and
                 direction losses of each level.
 
                 - loss_rpn_cls (list[torch.Tensor]): Classification losses.
                 - loss_rpn_bbox (list[torch.Tensor]): Box regression losses.
-                - loss_rpn_dir (list[torch.Tensor]): Direction classification \
+                - loss_rpn_dir (list[torch.Tensor]): Direction classification
                     losses.
         """
         loss_dict = super().loss(cls_scores, bbox_preds, dir_cls_preds,
@@ -141,7 +141,7 @@ class PartA2RPNHead(Anchor3DHead):
             mlvl_anchors (List[torch.Tensor]): Multi-level anchors
                 in single batch.
             input_meta (list[dict]): Contain pcd and img's meta info.
-            cfg (None | :obj:`ConfigDict`): Training or testing config.
+            cfg (:obj:`ConfigDict`): Training or testing config.
             rescale (list[torch.Tensor]): whether th rescale bbox.
 
         Returns:
@@ -205,7 +205,7 @@ class PartA2RPNHead(Anchor3DHead):
         mlvl_dir_scores = torch.cat(mlvl_dir_scores)
         # shape [k, num_class] before sigmoid
         # PartA2 need to keep raw classification score
-        # becase the bbox head in the second stage does not have
+        # because the bbox head in the second stage does not have
         # classification branch,
         # roi head need this score as classification score
         mlvl_cls_score = torch.cat(mlvl_cls_score)
@@ -238,7 +238,7 @@ class PartA2RPNHead(Anchor3DHead):
                 Multi-level bbox.
             score_thr (int): Score threshold.
             max_num (int): Max number of bboxes after nms.
-            cfg (None | :obj:`ConfigDict`): Training or testing config.
+            cfg (:obj:`ConfigDict`): Training or testing config.
             input_meta (dict): Contain pcd and img's meta info.
 
         Returns:
@@ -258,9 +258,9 @@ class PartA2RPNHead(Anchor3DHead):
         _scores = mlvl_max_scores[score_thr_inds]
         _bboxes_for_nms = mlvl_bboxes_for_nms[score_thr_inds, :]
         if cfg.use_rotate_nms:
-            nms_func = nms_gpu
+            nms_func = nms_bev
         else:
-            nms_func = nms_normal_gpu
+            nms_func = nms_normal_bev
         selected = nms_func(_bboxes_for_nms, _scores, cfg.nms_thr)
 
         _mlvl_bboxes = mlvl_bboxes[score_thr_inds, :]
@@ -285,7 +285,6 @@ class PartA2RPNHead(Anchor3DHead):
             scores = torch.cat(scores, dim=0)
             cls_scores = torch.cat(cls_scores, dim=0)
             labels = torch.cat(labels, dim=0)
-            dir_scores = torch.cat(dir_scores, dim=0)
             if bboxes.shape[0] > max_num:
                 _, inds = scores.sort(descending=True)
                 inds = inds[:max_num]

@@ -1,7 +1,8 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import torch
 
 from mmdet3d.core import merge_aug_bboxes_3d
-from mmdet.models import DETECTORS
+from ..builder import DETECTORS
 from .two_stage import TwoStage3DDetector
 
 
@@ -19,7 +20,8 @@ class H3DNet(TwoStage3DDetector):
                  roi_head=None,
                  train_cfg=None,
                  test_cfg=None,
-                 pretrained=None):
+                 pretrained=None,
+                 init_cfg=None):
         super(H3DNet, self).__init__(
             backbone=backbone,
             neck=neck,
@@ -27,7 +29,8 @@ class H3DNet(TwoStage3DDetector):
             roi_head=roi_head,
             train_cfg=train_cfg,
             test_cfg=test_cfg,
-            pretrained=pretrained)
+            pretrained=pretrained,
+            init_cfg=init_cfg)
 
     def forward_train(self,
                       points,
@@ -44,11 +47,11 @@ class H3DNet(TwoStage3DDetector):
             img_metas (list): Image metas.
             gt_bboxes_3d (:obj:`BaseInstance3DBoxes`): gt bboxes of each batch.
             gt_labels_3d (list[torch.Tensor]): gt class labels of each batch.
-            pts_semantic_mask (None | list[torch.Tensor]): point-wise semantic
+            pts_semantic_mask (list[torch.Tensor]): point-wise semantic
                 label of each batch.
-            pts_instance_mask (None | list[torch.Tensor]): point-wise instance
+            pts_instance_mask (list[torch.Tensor]): point-wise instance
                 label of each batch.
-            gt_bboxes_ignore (None | list[torch.Tensor]): Specify
+            gt_bboxes_ignore (list[torch.Tensor]): Specify
                 which bounding.
 
         Returns:

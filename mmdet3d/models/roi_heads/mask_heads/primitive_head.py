@@ -1,24 +1,26 @@
+# Copyright (c) OpenMMLab. All rights reserved.
 import torch
 from mmcv.cnn import ConvModule
+from mmcv.ops import furthest_point_sample
+from mmcv.runner import BaseModule
 from torch import nn as nn
 from torch.nn import functional as F
 
-from mmdet3d.models.builder import build_loss
+from mmdet3d.models.builder import HEADS, build_loss
 from mmdet3d.models.model_utils import VoteModule
-from mmdet3d.ops import build_sa_module, furthest_point_sample
+from mmdet3d.ops import build_sa_module
 from mmdet.core import multi_apply
-from mmdet.models import HEADS
 
 
 @HEADS.register_module()
-class PrimitiveHead(nn.Module):
+class PrimitiveHead(BaseModule):
     r"""Primitive head of `H3DNet <https://arxiv.org/abs/2006.05682>`_.
 
     Args:
         num_dims (int): The dimension of primitive semantic information.
         num_classes (int): The number of class.
         primitive_mode (str): The mode of primitive module,
-            avaliable mode ['z', 'xy', 'line'].
+            available mode ['z', 'xy', 'line'].
         bbox_coder (:obj:`BaseBBoxCoder`): Bbox coder for encoding and
             decoding boxes.
         train_cfg (dict): Config for training.
@@ -28,7 +30,7 @@ class PrimitiveHead(nn.Module):
         feat_channels (tuple[int]): Convolution channels of
             prediction layer.
         upper_thresh (float): Threshold for line matching.
-        surface_thresh (float): Threshold for suface matching.
+        surface_thresh (float): Threshold for surface matching.
         conv_cfg (dict): Config of convolution in prediction layer.
         norm_cfg (dict): Config of BN in prediction layer.
         objectness_loss (dict): Config of objectness loss.
@@ -52,8 +54,9 @@ class PrimitiveHead(nn.Module):
                  objectness_loss=None,
                  center_loss=None,
                  semantic_reg_loss=None,
-                 semantic_cls_loss=None):
-        super(PrimitiveHead, self).__init__()
+                 semantic_cls_loss=None,
+                 init_cfg=None):
+        super(PrimitiveHead, self).__init__(init_cfg=init_cfg)
         assert primitive_mode in ['z', 'xy', 'line']
         # The dimension of primitive semantic information.
         self.num_dims = num_dims
@@ -109,10 +112,6 @@ class PrimitiveHead(nn.Module):
         conv_out_channel = 3 + num_dims + num_classes
         self.conv_pred.add_module('conv_out',
                                   nn.Conv1d(prev_channel, conv_out_channel, 1))
-
-    def init_weights(self):
-        """Initialize weights of VoteHead."""
-        pass
 
     def forward(self, feats_dict, sample_mod):
         """Forward pass.
@@ -199,15 +198,15 @@ class PrimitiveHead(nn.Module):
         Args:
             bbox_preds (dict): Predictions from forward of primitive head.
             points (list[torch.Tensor]): Input points.
-            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth \
+            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth
                 bboxes of each sample.
             gt_labels_3d (list[torch.Tensor]): Labels of each sample.
-            pts_semantic_mask (None | list[torch.Tensor]): Point-wise
+            pts_semantic_mask (list[torch.Tensor]): Point-wise
                 semantic mask.
-            pts_instance_mask (None | list[torch.Tensor]): Point-wise
+            pts_instance_mask (list[torch.Tensor]): Point-wise
                 instance mask.
             img_metas (list[dict]): Contain pcd and img's meta info.
-            gt_bboxes_ignore (None | list[torch.Tensor]): Specify
+            gt_bboxes_ignore (list[torch.Tensor]): Specify
                 which bounding.
 
         Returns:
@@ -267,12 +266,12 @@ class PrimitiveHead(nn.Module):
 
         Args:
             points (list[torch.Tensor]): Points of each batch.
-            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth \
+            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth
                 bboxes of each batch.
             gt_labels_3d (list[torch.Tensor]): Labels of each batch.
-            pts_semantic_mask (None | list[torch.Tensor]): Point-wise semantic
+            pts_semantic_mask (list[torch.Tensor]): Point-wise semantic
                 label of each batch.
-            pts_instance_mask (None | list[torch.Tensor]): Point-wise instance
+            pts_instance_mask (list[torch.Tensor]): Point-wise instance
                 label of each batch.
             bbox_preds (dict): Predictions from forward of primitive head.
 
@@ -334,12 +333,12 @@ class PrimitiveHead(nn.Module):
 
         Args:
             points (torch.Tensor): Points of each batch.
-            gt_bboxes_3d (:obj:`BaseInstance3DBoxes`): Ground truth \
+            gt_bboxes_3d (:obj:`BaseInstance3DBoxes`): Ground truth
                 boxes of each batch.
             gt_labels_3d (torch.Tensor): Labels of each batch.
-            pts_semantic_mask (None | torch.Tensor): Point-wise semantic
+            pts_semantic_mask (torch.Tensor): Point-wise semantic
                 label of each batch.
-            pts_instance_mask (None | torch.Tensor): Point-wise instance
+            pts_instance_mask (torch.Tensor): Point-wise instance
                 label of each batch.
 
         Returns:
@@ -356,7 +355,7 @@ class PrimitiveHead(nn.Module):
 
         # Generate pts_semantic_mask and pts_instance_mask when they are None
         if pts_semantic_mask is None or pts_instance_mask is None:
-            points2box_mask = gt_bboxes_3d.points_in_boxes(points)
+            points2box_mask = gt_bboxes_3d.points_in_boxes_all(points)
             assignment = points2box_mask.argmax(1)
             background_mask = points2box_mask.max(1)[0] == 0
 
