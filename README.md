@@ -1,4 +1,8 @@
 # Bot-talion changes
+- create container of image using
+``docker run -it --name TransFusion_train --network=host --shm-size=32g -v /home/arthavpc/703_project:/home/project -v /media/arthavpc/exSSD:/home/data -v /media/arthavpc/ExternalData:/home/externalData --workdir=/home/project --gpus=all --runtime=nvidia --env DISPLAY=$DISPLAY transfusion:1rc6 bash``
+
+
 - download mini dataset from nuscenes to verify data loading https://www.nuscenes.org/download#
 - ``python3 tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes --version v1.0-mini``
 - had to reinstall mmcv as it was giving no kernel for cuda:0 error
@@ -9,7 +13,7 @@
 - MMCV_CUDA_ARGS="-gencode=arch=compute_120,code=sm_120" MMCV_WITH_OPS=1 pip install . --no-cache-dir -v
 - the gencode arch will change 120 is for RTX 50x0
 - run python3 misc/check_mmcv_installation.py for verification
-- can also run python -c 'import mmcv; import mmcv.ops' to verify no errors in import 
+- can also run python -c 'import mmcv; import mmcv.ops' to verify no errors in import
 - uninstall mmdet3d  pip3 uninstall mmdet3d && rm -rf ./build
 - MMDET3D_CUDA_ARGS="-gencode=arch=compute_120,code=sm_120" pip install -e . --no-cache-dir -v
 - pip3 uninstall spconv cumm (by default install cpu version)
@@ -25,7 +29,39 @@ after doing all this you should be able to ``python3 demo/pcd_demo.py demo/kitti
 
 
 
+Python script to convert Lidar model with ResNet
 
+import torch
+pts = torch.load('/home/project/TransFusion/work_dirs/transfusion_nusc_pillar_L/epoch_20.pth',  map_location='cpu')
+
+img = torch.load('/home/project/TransFusion/checkpoints/resnet50.pth',  map_location='cpu')
+
+def extract_state(d):
+    # If checkpoint already contains a 'state_dict' key
+    if "state_dict" in d:
+        return d["state_dict"]
+
+    # If checkpoint contains only weights (no wrapper)
+    if all(isinstance(k, str) for k in d.keys()):
+        return d
+
+    # Try common alternative keys
+    for key in ["model", "weights", "state", "params"]:
+        if key in d:
+            return d[key]
+
+    raise KeyError("No state_dict found in checkpoint. Keys: " + str(d.keys()))
+
+img_state = extract_state(img)
+pts_state = extract_state(pts)
+
+new_model = {"state_dict": pts_state.copy()}
+
+for k, v in img_state.items():
+    if 'backbone' in k or 'neck' in k:
+        new_model["state_dict"]['img_'+k] = v
+
+torch.save(new_model, "fusion_model.pth")
 
 
 # TransFusion repository
@@ -56,9 +92,9 @@ We propose TransFusion, a robust solution to LiDAR-camera fusion with a soft-ass
 
 ## Main Results
 
-Detailed results can be found in [nuscenes.md](configs/nuscenes.md) and [waymo.md](configs/waymo.md). Configuration files and guidance to reproduce these results are all included in [configs](configs), we are not going to release the pretrained models due to the policy of Huawei IAS BU. 
+Detailed results can be found in [nuscenes.md](configs/nuscenes.md) and [waymo.md](configs/waymo.md). Configuration files and guidance to reproduce these results are all included in [configs](configs), we are not going to release the pretrained models due to the policy of Huawei IAS BU.
 
-### nuScenes detection test 
+### nuScenes detection test
 
 | Model   | Backbone | mAP | NDS  | Link  |
 |---------|--------|--------|---------|---------|
@@ -69,8 +105,8 @@ Detailed results can be found in [nuscenes.md](configs/nuscenes.md) and [waymo.m
 
 | Model | Backbone | AMOTA |  AMOTP   | Link  |
 |---------|--------|--------|---------|---------|
-| [TransFusion-L](configs/transfusion_nusc_voxel_L.py) | VoxelNet | 0.686 | 0.529 | [Detection](https://drive.google.com/file/d/1Wk8p2LJEhwfKfhsKzlU9vDBOd0zn38dN/view?usp=sharing) / [Tracking](https://drive.google.com/file/d/1pKvRBUsM9h1Xgturd0Ae_bnGt0m_j3hk/view?usp=sharing)| 
-| [TransFusion](configs/transfusion_nusc_voxel_LC.py)| VoxelNet | 0.718 | 0.551 | [Detection](https://drive.google.com/file/d/1X7_ig4v5A2vKsiHtUGtgeMN-0RJKsM6W/view?usp=sharing) / [Tracking](https://drive.google.com/file/d/1EVuS-MAg_HSXUVqMrXEs4-RpZp0p5cfv/view?usp=sharing)| 
+| [TransFusion-L](configs/transfusion_nusc_voxel_L.py) | VoxelNet | 0.686 | 0.529 | [Detection](https://drive.google.com/file/d/1Wk8p2LJEhwfKfhsKzlU9vDBOd0zn38dN/view?usp=sharing) / [Tracking](https://drive.google.com/file/d/1pKvRBUsM9h1Xgturd0Ae_bnGt0m_j3hk/view?usp=sharing)|
+| [TransFusion](configs/transfusion_nusc_voxel_LC.py)| VoxelNet | 0.718 | 0.551 | [Detection](https://drive.google.com/file/d/1X7_ig4v5A2vKsiHtUGtgeMN-0RJKsM6W/view?usp=sharing) / [Tracking](https://drive.google.com/file/d/1EVuS-MAg_HSXUVqMrXEs4-RpZp0p5cfv/view?usp=sharing)|
 
 ### waymo detection validation
 
@@ -87,7 +123,7 @@ Please refer to [getting_started.md](docs/getting_started.md) for installation o
 
 **Benchmark Evaluation and Training**
 
-Please refer to [data_preparation.md](docs/data_preparation.md) to prepare the data. Then follow the instruction there to train our model. All detection configurations are included in [configs](configs/). 
+Please refer to [data_preparation.md](docs/data_preparation.md) to prepare the data. Then follow the instruction there to train our model. All detection configurations are included in [configs](configs/).
 
 Note that if you a the newer version of mmdet3d to prepare the meta file for nuScenes and then train/eval the TransFusion, it will have a wrong mAOE and mASE because mmdet3d has a [coordinate system refactoring](https://github.com/open-mmlab/mmdetection3d/blob/master/docs/en/compatibility.md#coordinate-system-refactoring) which affect the definitation of yaw angle and object size (`l, w`).
 

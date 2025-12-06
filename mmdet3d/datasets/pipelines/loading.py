@@ -379,9 +379,9 @@ class MyPad(object):
                     padded_img = mmcv.impad_to_multiple(
                         results[key][idx], self.size_divisor, pad_val=self.pad_val)
                     results[key][idx] = padded_img
-        results['pad_shape'] = padded_img.shape
-        results['pad_fixed_size'] = self.size
-        results['pad_size_divisor'] = self.size_divisor
+            results['pad_shape'] = padded_img.shape
+            results['pad_fixed_size'] = self.size
+            results['pad_size_divisor'] = self.size_divisor
 
     def _pad_masks(self, results):
         """Pad masks according to ``results['pad_shape']``."""

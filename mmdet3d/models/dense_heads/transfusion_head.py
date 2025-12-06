@@ -18,7 +18,7 @@ from mmdet3d.models.builder import HEADS, build_loss
 from mmdet3d.models.utils import clip_sigmoid
 from mmdet3d.models.fusion_layers import apply_3d_transformation
 # from mmdet3d.ops.iou3d.iou3d_utils import nms_gpu
-from mmcv.ops import nms as nms_gpu
+from mmcv.ops import nms_bev as nms_gpu
 from mmdet.core import build_bbox_coder, multi_apply, build_assigner, build_sampler, AssignResult
 # from mmdet3d.ops.roiaware_pool3d import points_in_boxes_batch
 # from mmcv.ops import point_in_box_cpu as point_in_box

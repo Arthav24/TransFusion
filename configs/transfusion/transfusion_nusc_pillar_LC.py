@@ -7,7 +7,7 @@ voxel_size = [0.2, 0.2, 8]
 out_size_factor = 4
 evaluation = dict(interval=1)
 dataset_type = 'NuScenesDataset'
-data_root = 'data/nuscenes_mini/'
+data_root = 'data/nuscenes/'
 input_modality = dict(
     use_lidar=True,
     use_camera=True,
@@ -265,7 +265,8 @@ log_config = dict(
 dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = None
-load_from = 'checkpoints/fusion_pillar02_R50.pth'
+# load_from = 'checkpoints/fusion_pillar02_R50.pth'
+load_from = 'checkpoints/fusion_model.pth'
 resume_from = None
 workflow = [('train', 1)]
 # gpu_ids = range(0, 8)
