@@ -156,9 +156,14 @@ def main():
         cfg.gpu_ids = range(1) if args.gpus is None else range(args.gpus)
     if digit_version(TORCH_VERSION) == digit_version('1.8.1') and cfg.optimizer['type'] == 'AdamW':
         cfg.optimizer['type'] = 'AdamW2' # fix bug in Adamw
-    if args.autoscale_lr:
-        # apply the linear scaling rule (https://arxiv.org/abs/1706.02677)
-        cfg.optimizer['lr'] = cfg.optimizer['lr'] * len(cfg.gpu_ids) / 8
+    
+    #============= to block autoscaling of the Learning Rate =================
+    
+    # if args.autoscale_lr:
+    #     # apply the linear scaling rule (https://arxiv.org/abs/1706.02677)
+    #     cfg.optimizer['lr'] = cfg.optimizer['lr'] * len(cfg.gpu_ids) / 8
+    
+    #============= to block autoscaling of the Learning Rate =================
 
     # init distributed env first, since logger depends on the dist info.
     if args.launcher == 'none':
