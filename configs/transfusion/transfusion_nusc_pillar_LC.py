@@ -242,10 +242,18 @@ model = dict(
             voxel_size=voxel_size[:2],
             nms_type=None,
         )))
-# optimizer = dict(type='AdamW', lr=0.0001, weight_decay=0.01)  # for 8gpu * 2sample_per_gpu
-optimizer = dict(type='AdamW', lr=1.25e-5, weight_decay=0.01) # for 1gpu
+# ===================== 8gpus ================================
 
+# optimizer = dict(type='AdamW', lr=0.0001, weight_decay=0.01)  # for 8gpu * 2sample_per_gpu
+# optimizer_config = dict(grad_clip=dict(max_norm=0.1, norm_type=2))
+
+# ===================== corrected for 1gpu ====================
+
+optimizer = dict(type='AdamW', lr=1.25e-5, weight_decay=0.01) # for 1gpu
 optimizer_config = dict(grad_clip=dict(max_norm=0.1, norm_type=2))
+
+# ==============================================================    
+
 lr_config = dict(
     policy='cyclic',
     target_ratio=(10, 0.0001),
@@ -270,6 +278,6 @@ load_from = 'checkpoints/fusion_model.pth'
 resume_from = None
 workflow = [('train', 1)]
 # gpu_ids = range(0, 8)
-gpu_ids = 0
+gpu_ids = range(1)   # GPUs: [0]
 freeze_lidar_components = True
 find_unused_parameters = True
