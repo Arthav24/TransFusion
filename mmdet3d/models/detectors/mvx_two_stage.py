@@ -460,7 +460,7 @@ class MVXTwoStageDetector(Base3DDetector):
                                             self.pts_bbox_head.test_cfg)
         return merged_bboxes
 
-    def show_results(self, data, result, out_dir):
+    def show_results(self, data, result, out_dir, show=False, score_thr=None):
         """Results visualization.
 
         Args:
@@ -506,4 +506,4 @@ class MVXTwoStageDetector(Base3DDetector):
                     f'Unsupported box_mode_3d {box_mode_3d} for conversion!')
 
             pred_bboxes = pred_bboxes.tensor.cpu().numpy()
-            show_result(points, None, pred_bboxes, out_dir, file_name)
+            show_result(points=points, gt_bboxes=None, pred_bboxes=pred_bboxes, out_dir=out_dir, filename=file_name, show=show, snapshot=True)
