@@ -421,7 +421,7 @@ class NuScenesDataset(Custom3DDataset):
         eval_set_map = {
             'v1.0-mini': 'mini_val',
             'v1.0-trainval': 'val',
-            'v1.0-test': 'test', # custom test config for nuCarla
+            'v1.0-test': 'test',
         }
         nusc_eval = NuScenesEval(
             nusc,

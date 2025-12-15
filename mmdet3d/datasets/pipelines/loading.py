@@ -268,7 +268,7 @@ class MyResize(object):
             dict: Resized results, 'img_shape', 'pad_shape', 'scale_factor', \
                 'keep_ratio' keys are added into result dict.
         """
-
+        # print('scale' not in results, 'scale_factor' not in results)
         if 'scale' not in results:
             if 'scale_factor' in results:
                 img_shape = results['img'][0].shape[:2]
@@ -431,9 +431,16 @@ class LoadMultiViewImageFromFiles(object):
             Defaults to 'unchanged'.
     """
 
-    def __init__(self, to_float32=False, color_type='unchanged'):
+    def __init__(self, to_float32=False, img_scale=None, color_type='unchanged'):
         self.to_float32 = to_float32
+        self.img_scale = img_scale
         self.color_type = color_type
+
+    def pad(self, img):
+        # to pad the 5 input images into a same size (for Waymo)
+        if img.shape[0] != self.img_scale[0]:
+            img = np.concatenate([img, np.zeros_like(img[0:1280-886,:])], axis=0)
+        return img
 
     def __call__(self, results):
         """Call function to load multi-view image from files.
@@ -455,8 +462,14 @@ class LoadMultiViewImageFromFiles(object):
         """
         filename = results['img_filename']
         # img is of shape (h, w, c, num_views)
-        img = np.stack(
-            [mmcv.imread(name, self.color_type) for name in filename], axis=-1)
+        #img = np.stack(
+        #    [mmcv.imread(name, self.color_type) for name in filename], axis=-1)
+        if self.img_scale is None:
+            img = np.stack(
+                [mmcv.imread(name, self.color_type) for name in filename], axis=-1)
+        else:
+            img = np.stack(
+                [self.pad(mmcv.imread(name, self.color_type)) for name in filename], axis=-1)
         if self.to_float32:
             img = img.astype(np.float32)
         results['filename'] = filename
@@ -680,7 +693,7 @@ class PointSegClassMapping(object):
         # build cat_id to class index mapping
         neg_cls = len(valid_cat_ids)
         self.cat_id2class = np.ones(
-            self.max_cat_id + 1, dtype=np.int) * neg_cls
+            self.max_cat_id + 1, dtype=int) * neg_cls
         for cls_idx, cat_id in enumerate(valid_cat_ids):
             self.cat_id2class[cat_id] = cls_idx
 
