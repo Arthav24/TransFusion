@@ -266,4 +266,4 @@ load_from = None
 resume_from = None
 workflow = [('train', 1)]
 # gpu_ids = range(0, 8)
-gpu_ids = 0
+gpu_ids = [0]
