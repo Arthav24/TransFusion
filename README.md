@@ -7,12 +7,12 @@
 - ``python3 tools/create_data.py nuscenes --root-path ./data/nuscenes --out-dir ./data/nuscenes --extra-tag nuscenes --version v1.0-mini``
 - had to reinstall mmcv as it was giving no kernel for cuda:0 error
 - pip3 uninstall mmcv-full
-- cd /workspace/nuCarla/BEVFormer/mmcv
+- cd /path/to./transfusion
 - rm -rf build mmcv_full.egg-info
 - export TORCH_CUDA_ARCH_LIST=12.0 && export CUDA_HOME=/usr/local/cuda
 - MMCV_CUDA_ARGS="-gencode=arch=compute_120,code=sm_120" MMCV_WITH_OPS=1 pip install . --no-cache-dir -v
-- the gencode arch will change 120 is for RTX 50x0
-- run python3 misc/check_mmcv_installation.py for verification
+- the gencode arch will change 120 is for RTX 50x0 89 for RTX40x0
+- run in Transfusion dir python3 misc/check_mmcv_installation.py for verification
 - can also run python -c 'import mmcv; import mmcv.ops' to verify no errors in import
 - uninstall mmdet3d  pip3 uninstall mmdet3d && rm -rf ./build
 - MMDET3D_CUDA_ARGS="-gencode=arch=compute_120,code=sm_120" pip install -e . --no-cache-dir -v
