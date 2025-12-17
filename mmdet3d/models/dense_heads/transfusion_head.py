@@ -10,10 +10,8 @@ from torch.nn import Linear
 from torch.nn.init import xavier_uniform_, constant_
 
 from mmdet3d.core import (circle_nms, draw_heatmap_gaussian, gaussian_radius,
-                          xywhr2xyxyr, limit_period, PseudoSampler)
-from mmdet3d.core.bbox.structures import rotation_3d_in_axis
-from mmdet3d.core import Box3DMode, LiDARInstance3DBoxes
-from mmdet3d.models import builder
+                          xywhr2xyxyr, PseudoSampler)
+from mmdet3d.core import LiDARInstance3DBoxes
 from mmdet3d.models.builder import HEADS, build_loss
 from mmdet3d.models.utils import clip_sigmoid
 from mmdet3d.models.fusion_layers import apply_3d_transformation

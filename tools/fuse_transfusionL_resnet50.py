@@ -28,4 +28,4 @@ for k, v in img_state.items():
     if 'backbone' in k or 'neck' in k:
         new_model["state_dict"]['img_'+k] = v
 
-torch.save(new_model, "fusion_model_AMP.pth")
+torch.save(new_model, "fusion_model_AMP_GELU_GN.pth")
