@@ -1,18 +1,11 @@
-import mmcv
 import torch
-from mmcv.parallel import DataContainer as DC
 from mmcv.runner import force_fp32
-from os import path as osp
 from torch import nn as nn
 from torch.nn import functional as F
 
-from mmdet3d.core import (Box3DMode, Coord3DMode, bbox3d2result,
-                          merge_aug_bboxes_3d, show_result)
+from mmdet3d.core import (bbox3d2result)
 # from mmdet3d.ops import Voxelization
-from mmcv.ops import Voxelization
-from mmdet.core import multi_apply
 from mmdet.models import DETECTORS
-from .. import builder
 from .mvx_two_stage import MVXTwoStageDetector
 
 
