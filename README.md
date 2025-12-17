@@ -28,42 +28,19 @@ Its quite hacky because of numpy version and changes will resolve later
 after doing all this you should be able to ``python3 demo/pcd_demo.py demo/kitti_000008.bin configs/second/hv_second_secfpn_6x8_80e_kitti-3d-car.py checkpoints/hv_second_secfpn_6x8_80e_kitti-3d-car_20200620_230238-393f000c.pth --show``
 
 
+## how to train
+```python3 tools/train.py <path/to/config>```
+Train L first then fuse resnet50 with trained L using tools/fuse_transfusionL_resnet50.py
+change the config in LC load_from = 'checkpoints/fusion_model_AMP_GELU_GN.pth'
+Then train LC
+
+
+## how to test
+```python3 tools/test.py <path/to/config> <path/to/checkpoint/model> --show --show-dir <path/to/dir>```
 
 
 
-Python script to convert Lidar model with ResNet
 
-import torch
-pts = torch.load('/home/project/TransFusion/work_dirs/transfusion_nusc_pillar_L/epoch_20.pth',  map_location='cpu')
-
-img = torch.load('/home/project/TransFusion/checkpoints/resnet50.pth',  map_location='cpu')
-
-def extract_state(d):
-    # If checkpoint already contains a 'state_dict' key
-    if "state_dict" in d:
-        return d["state_dict"]
-
-    # If checkpoint contains only weights (no wrapper)
-    if all(isinstance(k, str) for k in d.keys()):
-        return d
-
-    # Try common alternative keys
-    for key in ["model", "weights", "state", "params"]:
-        if key in d:
-            return d[key]
-
-    raise KeyError("No state_dict found in checkpoint. Keys: " + str(d.keys()))
-
-img_state = extract_state(img)
-pts_state = extract_state(pts)
-
-new_model = {"state_dict": pts_state.copy()}
-
-for k, v in img_state.items():
-    if 'backbone' in k or 'neck' in k:
-        new_model["state_dict"]['img_'+k] = v
-
-torch.save(new_model, "fusion_model.pth")
 
 
 # TransFusion repository
