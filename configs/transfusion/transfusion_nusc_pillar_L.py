@@ -113,7 +113,7 @@ test_pipeline = [
         ])
 ]
 data = dict(
-    samples_per_gpu=2,
+    samples_per_gpu=10,
     workers_per_gpu=6,
     train=dict(
         type='CBGSDataset',
@@ -197,7 +197,8 @@ model = dict(
         ffn_channel=256,
         dropout=0.1,
         bn_momentum=0.1,
-        activation='relu',
+        activation='gelu',
+        norm_cfg=dict(type='GN', num_groups=1),
         common_heads=dict(center=(2, 2), height=(1, 2), dim=(3, 2), rot=(2, 2), vel=(2, 2)),
         bbox_coder=dict(
             type='TransFusionBBoxCoder',
@@ -242,6 +243,9 @@ model = dict(
         )))
 # optimizer = dict(type='AdamW', lr=0.0001, weight_decay=0.01)  # for 8gpu * 2sample_per_gpu
 optimizer = dict(type='AdamW', lr=1.25e-5, weight_decay=0.01) # for 1gpu
+fp16 = dict(
+    loss_scale='dynamic'
+)
 optimizer_config = dict(grad_clip=dict(max_norm=0.1, norm_type=2))
 lr_config = dict(
     policy='cyclic',

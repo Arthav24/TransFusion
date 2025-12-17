@@ -76,7 +76,7 @@ test_pipeline = [
                 scale_ratio_range=[1.0, 1.0],
                 translation_std=[0, 0, 0]),
             dict(type='RandomFlip3D'),
-            dict(type='MyResize', img_scale=img_scale, keep_ratio=True),
+            dict(type='MyResize', img_scale=img_scale, keep_ratio=True, override=True),
             dict(type='MyNormalize', **img_norm_cfg),
             dict(type='MyPad', size_divisor=32),
             dict(
@@ -199,7 +199,8 @@ model = dict(
         ffn_channel=256,
         dropout=0.1,
         bn_momentum=0.1,
-        activation='relu',
+        activation='gelu',
+        norm_cfg=dict(type='GN', num_groups=1),
         common_heads=dict(center=(2, 2), height=(1, 2), dim=(3, 2), rot=(2, 2), vel=(2, 2)),
         bbox_coder=dict(
             type='TransFusionBBoxCoder',
@@ -244,6 +245,9 @@ model = dict(
         )))
 # optimizer = dict(type='AdamW', lr=0.0001, weight_decay=0.01)  # for 8gpu * 2sample_per_gpu
 optimizer = dict(type='AdamW', lr=1.25e-5, weight_decay=0.01) # for 1gpu
+fp16 = dict(
+    loss_scale='dynamic'
+)
 
 optimizer_config = dict(grad_clip=dict(max_norm=0.1, norm_type=2))
 lr_config = dict(
@@ -266,10 +270,11 @@ dist_params = dict(backend='nccl')
 log_level = 'INFO'
 work_dir = None
 # load_from = 'checkpoints/fusion_pillar02_R50.pth'
-load_from = 'checkpoints/fusion_model.pth'
+load_from = 'checkpoints/fusion_model_AMP_GELU_GN.pth'
+# resume_from = 'work_dirs/transfusion_nusc_pillar_LC/epoch_1.pth'
 resume_from = None
 workflow = [('train', 1)]
 # gpu_ids = range(0, 8)
-gpu_ids = 0
+gpu_ids = [0]
 freeze_lidar_components = True
 find_unused_parameters = True
