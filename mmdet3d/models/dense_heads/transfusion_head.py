@@ -931,7 +931,7 @@ class TransFusionHead(nn.Module):
             on_the_image_mask = torch.ones([batch_size, self.num_proposals]).to(query_pos_3d.device) * -1
 
             for sample_idx in range(batch_size if self.fuse_img else 0):
-                lidar2img_rt = query_pos_3d.new_tensor(img_metas[sample_idx]['lidar2img'])
+                lidar2img_rt = query_pos_3d.new_tensor(np.array(img_metas[sample_idx]['lidar2img']))
                 # print(img_metas[sample_idx]['scale_factor'])
                 img_scale_factor = (
                     # query_pos_3d.new_tensor(img_metas[sample_idx]['scale_factor'][:2]
